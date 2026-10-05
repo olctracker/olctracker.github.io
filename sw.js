@@ -1,8 +1,9 @@
 // OLC Database service worker: makes the app installable and loads fast.
-// App files: network first (so updates show up right away), cache as backup.
+// App files: network first, always re-checked with the server (so updates show up
+// right away), cache as backup for offline.
 // Fonts and the Supabase library: cache first.
 // Database requests are never cached.
-const CACHE = "olc-v2";
+const CACHE = "olc-v3";
 const SHELL = [
   "./", "index.html", "app.css", "app.js", "config.js", "game.js", "manifest.webmanifest",
   "logo.svg", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png"
@@ -43,7 +44,7 @@ self.addEventListener("fetch", (e) => {
 
   if (url.origin === self.location.origin) {
     e.respondWith(
-      fetch(req).then((res) => {
+      fetch(req, { cache: "no-cache" }).then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
