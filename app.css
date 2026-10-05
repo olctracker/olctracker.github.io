@@ -385,3 +385,9 @@ details[open] summary::before { content: "▾ "; }
 .rank b { font-size: 15px; }
 .danger-zone { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
 .danger-zone .card-h { color: var(--danger); }
+
+/* compact cards + icon sizing inside rows */
+.row > svg { width: 20px; height: 20px; flex: none; }
+.card.compact { padding: 12px 14px; }
+.card.compact .card-h { margin-bottom: 8px; }
+.ok-line { color: var(--accent); font-weight: 600; font-size: 14px; gap: 8px; }

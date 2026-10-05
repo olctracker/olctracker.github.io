@@ -416,29 +416,29 @@ async function pageHome(main) {
       <div class="sub">Welcome back, <b>${esc(S.profile.username)}</b></div>
     </div>
 
-    ${!standalone && !dismissed ? `
-    <div class="card accent" id="installCard">
-      <div class="card-h">Install the app<span class="r"><button class="icon-btn" id="dismissInstall" style="width:32px;height:32px" aria-label="Dismiss">${ICON.x}</button></span></div>
-      <div class="row"><div class="grow small muted">Add ${esc(S.settings.app_name)} to your home screen so it opens like a real app.</div>
-      <a class="btn sm primary" href="#/settings">How</a></div>
-    </div>` : ""}
-
-    ${check ? `
-    <div class="card warn">
-      <div class="card-h">Activity check<span class="r">ends in ${timeLeft(check.ends_at)}</span></div>
-      ${check.note ? `<p class="pre" style="margin-top:0">${esc(check.note)}</p>` : `<p style="margin-top:0">Confirm you're still active in the game.</p>`}
-      ${myResp
-        ? `<div class="row" style="color:var(--accent)">${ICON.check}<b>You're confirmed active</b></div>`
-        : `<button class="btn primary block" id="imActive">I'm still active</button>`}
-    </div>` : ""}
-
     <div class="card">
       <div class="card-h">Message of the day</div>
       <div class="pre">${esc(S.settings.motd) || `<span class="muted">No message yet.</span>`}</div>
       ${S.settings.updated_by ? `<div class="tiny muted" style="margin-top:10px">— ${esc(S.settings.updated_by)}, ${fmtDateTime(S.settings.updated_at)}</div>` : ""}
     </div>
 
+    ${check ? `
+    <div class="card warn compact">
+      <div class="card-h">Activity check<span class="r">ends in ${timeLeft(check.ends_at)}</span></div>
+      ${myResp
+        ? `<div class="row ok-line">${ICON.check}<span>You're confirmed active</span></div>`
+        : `<div class="row"><div class="grow small">${check.note ? esc(check.note) : "Confirm you're still active in the game."}</div>
+           <button class="btn sm primary" id="imActive">I'm active</button></div>`}
+    </div>` : ""}
+
     ${poll ? pollCard(poll, votes) : ""}
+
+    ${!standalone && !dismissed ? `
+    <div class="card accent" id="installCard">
+      <div class="card-h">Install the app<span class="r"><button class="icon-btn" id="dismissInstall" style="width:32px;height:32px" aria-label="Dismiss">${ICON.x}</button></span></div>
+      <div class="row"><div class="grow small muted">Add ${esc(S.settings.app_name)} to your home screen so it opens like a real app.</div>
+      <a class="btn sm primary" href="#/settings">How</a></div>
+    </div>` : ""}
 
     <div class="card">
       <div class="card-h">Game clock</div>
