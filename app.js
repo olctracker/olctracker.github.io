@@ -52,12 +52,12 @@ function toast(msg, bad = false) {
   setTimeout(() => t.remove(), 3200);
 }
 
-function modal(html, onMount) {
+function modal(html, onMount, opts = {}) {
   const wrap = document.createElement("div");
   wrap.className = "modal-wrap";
   wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
   const close = () => wrap.remove();
-  wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
+  if (!opts.sticky) wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   document.body.appendChild(wrap);
   onMount && onMount(wrap, close);
   return close;
@@ -132,9 +132,9 @@ const NAV = [
   { id: "victim", label: "Victim Logs", icon: "victim", soon: 6 },
   { sec: "Tracking" },
   { id: "crypto", label: "Crypto", icon: "crypto", soon: 4 },
-  { id: "lookup", label: "Lookup", icon: "lookup", soon: 3 },
-  { id: "software", label: "Software", icon: "software", soon: 3 },
-  { id: "spam", label: "Spam", icon: "spam", soon: 5 },
+  { id: "lookup", label: "Lookup", icon: "lookup" },
+  { id: "software", label: "Software", icon: "software" },
+  { id: "spam", label: "Spam", icon: "spam" },
   { id: "siphon", label: "Siphon", icon: "siphon", soon: 5 },
   { id: "leads", label: "Leads", icon: "leads", soon: 6 },
   { sec: "Crew", modOnly: true },
@@ -162,7 +162,10 @@ function go(route) {
 }
 
 function routeFromHash() {
-  const r = (location.hash.replace(/^#\/?/, "") || "home").split("?")[0];
+  const parts = (location.hash.replace(/^#\/?/, "") || "home").split("?")[0].split("/");
+  const r = parts[0];
+  S.arg = parts[1] ? decodeURIComponent(parts[1]) : null;
+  if (r === "ip" && S.arg) return "ip";
   const item = NAV.find((n) => n.id === r);
   if (!item) return "home";
   if (item.modOnly && !isMod()) return "home";
@@ -201,8 +204,11 @@ async function loadProfile() {
 }
 async function loadPendingCount() {
   if (!isMod()) { S.pendingCount = 0; return; }
-  const { count } = await sb.from("profiles").select("id", { count: "exact", head: true }).eq("approved", false);
-  S.pendingCount = count || 0;
+  const [a, b] = await Promise.all([
+    sb.from("profiles").select("id", { count: "exact", head: true }).eq("approved", false),
+    sb.from("flags").select("id", { count: "exact", head: true }).eq("resolved", false)
+  ]);
+  S.pendingCount = (a.count || 0) + (b.count || 0);
 }
 
 /* =========================================================
@@ -347,7 +353,7 @@ function renderNav() {
   const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()));
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
-    : `<a href="#/${n.id}" class="${S.route === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
+    : `<a href="#/${n.id}" class="${(S.route === "ip" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
         ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
   ).join("");
   $$("#nav a").forEach((a) => (a.onclick = closeDrawer));
@@ -361,7 +367,7 @@ async function render() {
   if (!S.profile?.approved || !$("#main")) return;
   S.route = routeFromHash();
   stopClock();
-  const item = NAV.find((n) => n.id === S.route);
+  const item = S.route === "ip" ? { id: "ip", label: "Target" } : NAV.find((n) => n.id === S.route);
   $("#pageTitle").textContent = item.label;
   loadPendingCount().then(renderNav);
   renderNav();
@@ -372,6 +378,7 @@ async function render() {
     if (S.route === "home") await pageHome(main);
     else if (S.route === "settings") await pageSettings(main);
     else if (S.route === "mod") await pageMod(main);
+    else if (window.OLC_PAGES && window.OLC_PAGES[S.route]) await window.OLC_PAGES[S.route](main, S.arg);
     else pageSoon(main, item);
   } catch (e) {
     main.innerHTML = `<div class="card"><div class="card-h">Error</div><p>${esc(errMsg(e))}</p>
@@ -587,11 +594,13 @@ async function pageSettings(main) {
    ========================================================= */
 async function pageMod(main) {
   const now = new Date().toISOString();
-  const [profR, pollR, checkR] = await Promise.all([
+  const [profR, pollR, checkR, flagR] = await Promise.all([
     sb.from("profiles").select("id,username,role,approved,created_at").order("created_at"),
     sb.from("polls").select("*").eq("active", true).order("created_at", { ascending: false }).limit(1),
-    sb.from("activity_checks").select("*").order("starts_at", { ascending: false }).limit(1)
+    sb.from("activity_checks").select("*").order("starts_at", { ascending: false }).limit(1),
+    sb.from("flags").select("*").eq("resolved", false).order("created_at", { ascending: false }).limit(100)
   ]);
+  const flags = flagR.data || [];
   const people = profR.data || [];
   const pending = people.filter((p) => !p.approved);
   const members = people.filter((p) => p.approved);
@@ -616,6 +625,23 @@ async function pageMod(main) {
           <button class="btn sm danger" data-reject="${p.id}" data-name="${esc(p.username)}">Reject</button>
           <button class="btn sm primary" data-approve="${p.id}">Approve</button></li>`).join("")}</ul>`
         : `<div class="empty">No one is waiting.</div>`}
+    </div>
+
+    <div class="card ${flags.length ? "warn" : ""}">
+      <div class="card-h">Review queue<span class="r">${flags.length}</span></div>
+      ${flags.length ? `<ul class="list">${flags.map((f) => `
+        <li style="align-items:flex-start"><div class="grow">
+          <a class="mono" href="#/ip/${encodeURIComponent(f.ip)}">${esc(f.ip)}</a>
+          <span class="badge ${f.kind === "incorrect" ? "pending" : "mod"}">${f.kind === "incorrect" ? "incorrect" : "spam removed"}</span>
+          ${f.note ? `<div class="small pre" style="margin-top:4px">${esc(f.note)}</div>` : ""}
+          <div class="tiny muted">Flagged by ${esc(f.flagged_by || "—")}, ${fmtDateTime(f.created_at)}</div>
+          <div class="row wrap" style="gap:6px;margin-top:8px">
+            ${f.kind === "spam_removed" ? `<button class="btn sm primary" data-flag="${f.id}" data-do="active" data-ip="${esc(f.ip)}">Set Active</button>
+              <button class="btn sm" data-flag="${f.id}" data-do="resolve">Keep Inactive</button>`
+            : `<a class="btn sm" href="#/ip/${encodeURIComponent(f.ip)}">Open IP</a>
+              <button class="btn sm primary" data-flag="${f.id}" data-do="resolve">Mark fixed</button>`}
+          </div></div></li>`).join("")}</ul>`
+        : `<div class="empty">Nothing to review.</div>`}
     </div>
 
     <div class="card">
@@ -705,6 +731,18 @@ async function pageMod(main) {
     const { error } = await sb.rpc("delete_user", { p_id: b.dataset.reject });
     if (error) return toast(errMsg(error), true);
     toast("Sign-up removed"); render();
+  }));
+
+  // review queue
+  $$("[data-flag]").forEach((b) => (b.onclick = async () => {
+    btnBusy(b, true, "…");
+    if (b.dataset.do === "active") {
+      const { error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active" }, { onConflict: "ip" });
+      if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
+    }
+    const { error } = await sb.from("flags").update({ resolved: true }).eq("id", Number(b.dataset.flag));
+    if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
+    toast("Resolved"); render();
   }));
 
   // member actions
@@ -855,6 +893,10 @@ function pageSoon(main, item) {
       <ul>${(SOON_TEXT[item.id] || []).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
     </div>`;
 }
+
+/* ---------- shared with page modules (game.js) ---------- */
+window.OLC = { sb, S, CFG, $, $$, esc, toast, modal, confirmBox, btnBusy, errMsg,
+  fmtDate, fmtDateTime, isMod, isAdmin, render, go };
 
 /* =========================================================
    BOOT

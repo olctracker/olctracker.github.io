@@ -2,9 +2,9 @@
 // App files: network first (so updates show up right away), cache as backup.
 // Fonts and the Supabase library: cache first.
 // Database requests are never cached.
-const CACHE = "olc-v1";
+const CACHE = "olc-v2";
 const SHELL = [
-  "./", "index.html", "app.css", "app.js", "config.js", "manifest.webmanifest",
+  "./", "index.html", "app.css", "app.js", "config.js", "game.js", "manifest.webmanifest",
   "logo.svg", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png"
 ];
 
