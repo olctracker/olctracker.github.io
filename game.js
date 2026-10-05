@@ -386,7 +386,7 @@ PAGES.ip = async function pageTarget(main, ip) {
   const refresh = () => render();
   $("[data-copy]", main).onclick = () => copy(ip);
   $$("[data-copyw]", main).forEach((b) => (b.onclick = () => copy(b.dataset.copyw)));
-  $("[data-add]", main) && ($("[data-add]", main).onclick = async () => { if (await addIpDialog(ip)) refresh(); });
+  $("[data-add]", main) && ($("[data-add]", main).onclick = async () => { if (await addFlow(ip)) refresh(); });
   $("[data-edit-level]", main).onclick = async () => {
     const v = await numberDialog("Player level", t?.player_level);
     if (v === undefined) return;
@@ -493,8 +493,7 @@ PAGES.software = async function pageSoftware(main) {
     O().go("ip/" + encodeURIComponent(ip));
   };
   $("[data-add]", main).onclick = async () => {
-    const ip = await addIpDialog();
-    if (ip) { toast("Saved — now add the software"); O().go("ip/" + encodeURIComponent(ip)); }
+    await addFlow();
   };
 
   const { data: recent } = await sb.from("targets").select("*").order("updated_at", { ascending: false }).limit(15);
@@ -572,13 +571,13 @@ PAGES.lookup = async function pageLookup(main) {
     $$("[data-scr]", out).forEach((b) => (b.onclick = async () => { if (await askScrambled(b.dataset.scr)) show(input.value); }));
     bindRows(out);
     const addThis = $("[data-addthis]", out);
-    if (addThis) addThis.onclick = async () => { const ip = await addIpDialog(term); if (ip) O().go("ip/" + encodeURIComponent(ip)); };
+    if (addThis) addThis.onclick = () => addFlow(term);
   };
 
   let timer;
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => show(input.value), 350); });
   $("[data-form]", main).onsubmit = (e) => { e.preventDefault(); clearTimeout(timer); input.blur(); show(input.value); };
-  $("[data-add]", main).onclick = async () => { const ip = await addIpDialog(); if (ip) O().go("ip/" + encodeURIComponent(ip)); };
+  $("[data-add]", main).onclick = () => addFlow();
   show(saved);
 };
 
@@ -663,6 +662,33 @@ PAGES.spam = async function pageSpam(main) {
     } catch (ex) { err.textContent = errMsg(ex); }
   };
 };
+
+/* ---------- one continuous add: details, then software, then the IP page ---------- */
+function softwareChoice(ip) {
+  const { modal, esc, $ } = O();
+  return new Promise((done) => {
+    modal(`<h3>Add software for ${esc(ip)}?</h3>
+      <p>Enter the levels one by one, or paste their software screen.</p>
+      <button class="btn primary block" data-c="keys">${IC.keys} Enter levels</button>
+      <button class="btn block" data-c="paste" style="margin-top:8px">${IC.paste} Paste software</button>
+      <button class="btn ghost block" data-c="skip" style="margin-top:8px">Skip for now</button>`,
+    (w, close) => {
+      w.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => { close(); done(b.dataset.c); }));
+    }, { sticky: true });
+  });
+}
+async function addFlow(prefill = "") {
+  const ip = await addIpDialog(prefill);
+  if (!ip) return false;
+  const choice = await softwareChoice(ip);
+  if (choice !== "skip") {
+    const { data: t } = await O().sb.from("targets").select("*").eq("ip", ip).maybeSingle();
+    if (choice === "keys") await keypadDialog(ip, t, 0);
+    else await pasteDialog(ip, t);
+  }
+  O().go("ip/" + encodeURIComponent(ip));
+  return true;
+}
 
 /* shared with later page modules */
 window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp };
