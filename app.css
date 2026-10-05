@@ -355,3 +355,33 @@ details[open] summary::before { content: "▾ "; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--line-2); background: none; border-radius: 99px; padding: 6px 12px; font-size: 13px; color: var(--dim); cursor: pointer; }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* =========================================================
+   Stage 4 — My Logs + Crypto tracker
+   ========================================================= */
+.log-box { font-size: 13px !important; line-height: 1.5; min-height: 160px; }
+.gain { color: var(--accent); }
+.loss { color: var(--danger); }
+.preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+.pv { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center; }
+.pv b { display: block; font: 700 16px "JetBrains Mono", monospace; color: var(--accent); }
+.pv.bad b { color: var(--danger); }
+.pv span { font-size: 10.5px; color: var(--dim); }
+.events li, .list .ev-t { font-size: 13.5px; }
+.ev-t { flex: none; width: 76px; color: var(--faint); font-size: 11.5px !important; }
+.events b, .list b.gain, .list b.loss { font-family: "JetBrains Mono", monospace; font-size: 13.5px; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.tile.big { grid-column: 1 / -1; background: linear-gradient(180deg, var(--accent-soft), transparent 80%), var(--panel); border-color: var(--line-2); }
+.tile .k { font: 600 10px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.tile .v { font: 700 22px "JetBrains Mono", monospace; margin-top: 2px; }
+.tile.big .v { font-size: 32px; }
+.tile .s { font-size: 12px; color: var(--dim); }
+.rank { list-style: none; margin: 0; padding: 0; }
+.rank li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.rank li:first-child { border-top: 0; }
+.rank .rk { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--panel-2); color: var(--dim); font-size: 12px; font-weight: 700; }
+.rank li:nth-child(-n+3) .rk { background: var(--accent-soft); color: var(--accent); }
+.rank b { font-size: 15px; }
+.danger-zone { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); }
+.danger-zone .card-h { color: var(--danger); }

@@ -664,4 +664,6 @@ PAGES.spam = async function pageSpam(main) {
   };
 };
 
+/* shared with later page modules */
+window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp };
 })();
