@@ -391,3 +391,14 @@ details[open] summary::before { content: "▾ "; }
 .card.compact { padding: 12px 14px; }
 .card.compact .card-h { margin-bottom: 8px; }
 .ok-line { color: var(--accent); font-weight: 600; font-size: 14px; gap: 8px; }
+
+/* =========================================================
+   Stage 5 — spam slots + siphon
+   ========================================================= */
+.slot-bar { height: 8px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.slot-bar i { display: block; height: 100%; background: var(--accent); box-shadow: var(--glow); }
+.lv-pill { flex: none; width: 46px; text-align: center; padding: 4px 0; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line-2); font-weight: 700; font-size: 17px; line-height: 1.1; }
+.lv-pill small { display: block; font-size: 9px; letter-spacing: .12em; color: var(--dim); font-weight: 600; }
+.miss-list { max-height: 46vh; overflow-y: auto; }
+select.input.sm-select { width: auto; flex: none; min-height: 38px; padding: 6px 10px; font-size: 14px; }

@@ -135,7 +135,7 @@ const NAV = [
   { id: "lookup", label: "Lookup", icon: "lookup" },
   { id: "software", label: "Software", icon: "software" },
   { id: "spam", label: "Spam", icon: "spam" },
-  { id: "siphon", label: "Siphon", icon: "siphon", soon: 5 },
+  { id: "siphon", label: "Siphon", icon: "siphon" },
   { id: "leads", label: "Leads", icon: "leads", soon: 6 },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },

@@ -595,6 +595,7 @@ PAGES.spam = async function pageSpam(main) {
     ((a.firewall ?? 1e9) - (b.firewall ?? 1e9)) || ((b.player_level ?? 0) - (a.player_level ?? 0)));
 
   main.innerHTML = `
+    <div data-slots><div class="loading" style="min-height:120px">Loading your slots</div></div>
     <div class="card">
       <div class="card-h">Add to inactive spam list</div>
       <form data-add>
@@ -619,10 +620,7 @@ PAGES.spam = async function pageSpam(main) {
       <ul class="list" data-list></ul>
     </div>
 
-    <div class="card">
-      <div class="card-h">My spam slots</div>
-      <p class="small muted" style="margin:0">Coming in stage 5: paste your 64 slots, missing-slot check, and the 10 lowest-firewall suggestions.</p>
-    </div>`;
+`;
 
   const draw = () => {
     const rows = all.filter((t) => (!f.hideScr || !t.scrambled) && (!f.lv25 || (t.player_level ?? 0) >= 25)
@@ -646,6 +644,7 @@ PAGES.spam = async function pageSpam(main) {
     draw();
   }));
   draw();
+  if (window.OLC_SLOTS) window.OLC_SLOTS.mountSpamSlots($("[data-slots]", main)).catch((e) => toast(errMsg(e), true));
 
   $("[data-add]", main).onsubmit = async (e) => {
     e.preventDefault();
