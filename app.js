@@ -16,6 +16,7 @@ const S = {
   settings: { app_name: "OLC Database", motd: "" },
   route: "home",
   pendingCount: 0,
+  reviewCount: 0,
   installPrompt: null,
   clockTimer: null
 };
@@ -113,6 +114,7 @@ const ICON = {
   siphon: I('<path d="M12 3v8"/><path d="M8 7l4 4 4-4"/><path d="M5 14c0 4 3 7 7 7s7-3 7-7"/>'),
   leads: I('<path d="M12 21s-7-6.5-7-11a7 7 0 0114 0c0 4.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
   mod: I('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>'),
+  review: I('<path d="M9 4h6l1 2h3v15H5V6h3l1-2z"/><path d="M9 13l2 2 4-4"/>'),
   top: I('<path d="M8 21h8M12 17v4"/><path d="M7 4h10v5a5 5 0 01-10 0V4z"/><path d="M17 6h3v2a3 3 0 01-3 3M7 6H4v2a3 3 0 003 3"/>'),
   settings: I('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 010-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V3a2 2 0 014 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H21a2 2 0 010 4h-.1a1.6 1.6 0 00-1.5 1z"/>'),
   dots: I('<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>'),
@@ -140,6 +142,7 @@ const NAV = [
   { id: "leads", label: "Leads", icon: "leads" },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
+  { id: "review", label: "Mod Review", icon: "review", modOnly: true },
   { id: "top", label: "Server Top 25", icon: "top", adminOnly: true },
   { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
   { sec: "You" },
@@ -206,12 +209,14 @@ async function loadProfile() {
   if (S.profile) applyTheme(S.profile.theme);
 }
 async function loadPendingCount() {
-  if (!isMod()) { S.pendingCount = 0; return; }
-  const [a, b] = await Promise.all([
+  if (!isMod()) { S.pendingCount = 0; S.reviewCount = 0; return; }
+  const [a, b, c] = await Promise.all([
     sb.from("profiles").select("id", { count: "exact", head: true }).eq("approved", false),
-    sb.from("flags").select("id", { count: "exact", head: true }).eq("resolved", false)
+    sb.from("flags").select("id", { count: "exact", head: true }).eq("resolved", false),
+    sb.from("possible_spam").select("ip", { count: "exact", head: true }).eq("dismissed", false)
   ]);
-  S.pendingCount = (a.count || 0) + (b.count || 0);
+  S.pendingCount = a.count || 0;
+  S.reviewCount = (b.count || 0) + (c.count || 0);
 }
 
 /* =========================================================
@@ -357,7 +362,7 @@ function renderNav() {
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
     : `<a href="#/${n.id}" class="${(S.route === "ip" || S.route === "add" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
-        ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
+        ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.id === "review" && S.reviewCount ? `<span class="count">${S.reviewCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
   ).join("");
   $$("#nav a").forEach((a) => (a.onclick = closeDrawer));
   $("#drawerName").textContent = S.settings.app_name;
@@ -381,6 +386,7 @@ async function render() {
     if (S.route === "home") await pageHome(main);
     else if (S.route === "settings") await pageSettings(main);
     else if (S.route === "mod") await pageMod(main);
+    else if (S.route === "review") await pageReview(main);
     else if (window.OLC_PAGES && window.OLC_PAGES[S.route]) await window.OLC_PAGES[S.route](main, S.arg);
     else pageSoon(main, item);
   } catch (e) {
@@ -597,15 +603,11 @@ async function pageSettings(main) {
    ========================================================= */
 async function pageMod(main) {
   const now = new Date().toISOString();
-  const [profR, pollR, checkR, flagR] = await Promise.all([
+  const [profR, pollR, checkR] = await Promise.all([
     sb.from("profiles").select("id,username,role,approved,created_at").order("created_at"),
     sb.from("polls").select("*").eq("active", true).order("created_at", { ascending: false }).limit(1),
-    sb.from("activity_checks").select("*").order("starts_at", { ascending: false }).limit(1),
-    sb.from("flags").select("*").eq("resolved", false).order("created_at", { ascending: false }).limit(100)
+    sb.from("activity_checks").select("*").order("starts_at", { ascending: false }).limit(1)
   ]);
-  const flags = flagR.data || [];
-  const { data: pspam } = await sb.from("possible_spam").select("*").eq("dismissed", false)
-    .order("per_hour", { ascending: false }).limit(100);
   const people = profR.data || [];
   const pending = people.filter((p) => !p.approved);
   const members = people.filter((p) => p.approved);
@@ -630,32 +632,6 @@ async function pageMod(main) {
           <button class="btn sm danger" data-reject="${p.id}" data-name="${esc(p.username)}">Reject</button>
           <button class="btn sm primary" data-approve="${p.id}">Approve</button></li>`).join("")}</ul>`
         : `<div class="empty">No one is waiting.</div>`}
-    </div>
-
-    <div class="card ${flags.length ? "warn" : ""}">
-      <div class="card-h">Review queue<span class="r">${flags.length}</span></div>
-      ${flags.length ? `<ul class="list">${flags.map((f) => `
-        <li style="align-items:flex-start"><div class="grow">
-          <a class="mono" href="#/ip/${encodeURIComponent(f.ip)}">${esc(f.ip)}</a>
-          <span class="badge ${f.kind === "incorrect" ? "pending" : "mod"}">${f.kind === "incorrect" ? "incorrect" : "spam removed"}</span>
-          ${f.note ? `<div class="small pre" style="margin-top:4px">${esc(f.note)}</div>` : ""}
-          <div class="tiny muted">Flagged by ${esc(f.flagged_by || "—")}, ${fmtDateTime(f.created_at)}</div>
-          <div class="row wrap" style="gap:6px;margin-top:8px">
-            ${f.kind === "spam_removed" ? `<button class="btn sm primary" data-flag="${f.id}" data-do="active" data-ip="${esc(f.ip)}">Set Active</button>
-              <button class="btn sm" data-flag="${f.id}" data-do="resolve">Keep Inactive</button>`
-            : `<a class="btn sm" href="#/ip/${encodeURIComponent(f.ip)}">Open IP</a>
-              <button class="btn sm primary" data-flag="${f.id}" data-do="resolve">Mark fixed</button>`}
-          </div></div></li>`).join("")}</ul>`
-        : `<div class="empty">Nothing to review.</div>`}
-    </div>
-
-    <div class="card">
-      <div class="card-h">Possible spam (100/hr)<span class="r">${(pspam || []).length}</span></div>
-      ${(pspam || []).length ? `<ul class="list">${pspam.map((p) => `
-        <li><div class="grow"><a class="mono" href="#/ip/${encodeURIComponent(p.ip)}">${esc(p.ip)}</a>
-          <div class="tiny muted">${p.per_hour ?? "—"}/hr · reported by ${esc(p.reported_by || "—")}, ${fmtDateTime(p.updated_at)}</div></div>
-          <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></li>`).join("")}</ul>`
-        : `<div class="empty">No 100/hr IPs reported.</div>`}
     </div>
 
     <div class="card">
@@ -745,25 +721,6 @@ async function pageMod(main) {
     const { error } = await sb.rpc("delete_user", { p_id: b.dataset.reject });
     if (error) return toast(errMsg(error), true);
     toast("Sign-up removed"); render();
-  }));
-
-  // possible spam
-  $$("[data-pspam]").forEach((b) => (b.onclick = async () => {
-    const { error } = await sb.from("possible_spam").update({ dismissed: true }).eq("ip", b.dataset.pspam);
-    if (error) return toast(errMsg(error), true);
-    toast("Dismissed"); render();
-  }));
-
-  // review queue
-  $$("[data-flag]").forEach((b) => (b.onclick = async () => {
-    btnBusy(b, true, "…");
-    if (b.dataset.do === "active") {
-      const { error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active" }, { onConflict: "ip" });
-      if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
-    }
-    const { error } = await sb.from("flags").update({ resolved: true }).eq("id", Number(b.dataset.flag));
-    if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
-    toast("Resolved"); render();
   }));
 
   // member actions
@@ -883,6 +840,62 @@ async function pageMod(main) {
     if (error) return toast(errMsg(error), true);
     render();
   });
+}
+
+/* =========================================================
+   MOD REVIEW — flagged IPs and 100/hr spam reports
+   ========================================================= */
+async function pageReview(main) {
+  const [flagR, pspamR] = await Promise.all([
+    sb.from("flags").select("*").eq("resolved", false).order("created_at", { ascending: false }).limit(200),
+    sb.from("possible_spam").select("*").eq("dismissed", false).order("per_hour", { ascending: false }).limit(100)
+  ]);
+  const flags = flagR.data || [], pspam = pspamR.data || [];
+  main.innerHTML = `
+    <div class="card ${flags.length ? "warn" : ""}">
+      <div class="card-h">Review queue<span class="r">${flags.length}</span></div>
+      ${flags.length ? `<ul class="list">${flags.map((f) => `
+        <li style="align-items:flex-start"><div class="grow">
+          <a class="mono" href="#/ip/${encodeURIComponent(f.ip)}">${esc(f.ip)}</a>
+          <span class="badge ${f.kind === "incorrect" ? "pending" : "mod"}">${f.kind === "incorrect" ? "incorrect" : "spam removed"}</span>
+          ${f.note ? `<div class="small pre" style="margin-top:4px">${esc(f.note)}</div>` : ""}
+          <div class="tiny muted">Flagged by ${esc(f.flagged_by || "—")}, ${fmtDateTime(f.created_at)}</div>
+          <div class="row wrap" style="gap:6px;margin-top:8px">
+            ${f.kind === "spam_removed" ? `<button class="btn sm primary" data-flag="${f.id}" data-do="active" data-ip="${esc(f.ip)}">Set Active</button>
+              <button class="btn sm" data-flag="${f.id}" data-do="resolve">Keep Inactive</button>`
+            : `<a class="btn sm" href="#/ip/${encodeURIComponent(f.ip)}">Open IP</a>
+              <button class="btn sm primary" data-flag="${f.id}" data-do="resolve">Mark fixed</button>`}
+          </div></div></li>`).join("")}</ul>`
+        : `<div class="empty">Nothing to review.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-h">Possible spam (100/hr)<span class="r">${(pspam || []).length}</span></div>
+      ${(pspam || []).length ? `<ul class="list">${pspam.map((p) => `
+        <li><div class="grow"><a class="mono" href="#/ip/${encodeURIComponent(p.ip)}">${esc(p.ip)}</a>
+          <div class="tiny muted">${p.per_hour ?? "—"}/hr · reported by ${esc(p.reported_by || "—")}, ${fmtDateTime(p.updated_at)}</div></div>
+          <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></li>`).join("")}</ul>`
+        : `<div class="empty">No 100/hr IPs reported.</div>`}
+    </div>`;
+
+  // possible spam
+  $$("[data-pspam]").forEach((b) => (b.onclick = async () => {
+    const { error } = await sb.from("possible_spam").update({ dismissed: true }).eq("ip", b.dataset.pspam);
+    if (error) return toast(errMsg(error), true);
+    toast("Dismissed"); render();
+  }));
+
+  // review queue
+  $$("[data-flag]").forEach((b) => (b.onclick = async () => {
+    btnBusy(b, true, "…");
+    if (b.dataset.do === "active") {
+      const { error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active" }, { onConflict: "ip" });
+      if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
+    }
+    const { error } = await sb.from("flags").update({ resolved: true }).eq("id", Number(b.dataset.flag));
+    if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
+    toast("Resolved"); render();
+  }));
 }
 
 function squareImage(file, size) {

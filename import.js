@@ -166,7 +166,7 @@ PAGES.import = async function pageImport(main) {
       toast(`Imported ${r.imported}${r.flagged ? ` · ${r.flagged} sent to Mods` : ""}`);
       ta.value = "";
       prev.innerHTML = `<div class="card"><div class="card-h">Done</div>
-        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to the review queue in Mod Tools.` : ""}</p></div>`;
+        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to Mod Review.` : ""}</p></div>`;
     } catch (e) { btnBusy(btn, false); toast(errMsg(e), true); }
   }
 
