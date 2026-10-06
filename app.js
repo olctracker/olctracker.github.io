@@ -129,7 +129,7 @@ const NAV = [
   { id: "home", label: "Home", icon: "home" },
   { sec: "Logs" },
   { id: "logs", label: "My Logs", icon: "log" },
-  { id: "victim", label: "Victim Logs", icon: "victim", soon: 6 },
+  { id: "victim", label: "Victim Logs", icon: "victim" },
   { sec: "Tracking" },
   { id: "crypto", label: "Crypto", icon: "crypto" },
   { id: "lookup", label: "Lookup", icon: "lookup" },
