@@ -271,7 +271,7 @@ PAGES.ip = async function pageTarget(main, ip) {
   const t = tR.data, cur = curR.data || [], prev = prevR.data || [];
   const known = t ? PROGRAMS.filter((p) => t[p.key] !== null && t[p.key] !== undefined).length : 0;
   const mod = isMod();
-  const canSetStatus = mod || !t || t.status === "unknown";
+  const canSetStatus = true;
 
   main.innerHTML = `
     <a class="back-link" href="javascript:history.back()">${IC.back} Back</a>
@@ -297,7 +297,7 @@ PAGES.ip = async function pageTarget(main, ip) {
       <div class="card-h">Status</div>
       ${canSetStatus ? `<div class="seg" style="margin:0;grid-template-columns:1fr 1fr 1fr">
           ${["unknown", "active", "inactive"].map((s) => `<button data-status="${s}" class="${t.status === s ? "on" : ""}">${s[0].toUpperCase() + s.slice(1)}</button>`).join("")}</div>
-          ${!mod ? `<div class="hint">Once set, only a Mod can change it. If it's wrong later, flag it.</div>` : ""}`
+`
         : `<div class="row"><span class="badge st-${esc(t.status)}">${esc(t.status)}</span><span class="small muted grow">Only Mods can change a known status. Wrong? Flag it below.</span></div>`}
     </div>` : ""}
 
@@ -676,7 +676,7 @@ PAGES.add = async function pageAdd(main, prefill) {
     status = s;
     $$("[data-st]", main).forEach((b) => b.classList.toggle("on", b.dataset.st === s));
   };
-  const statusLocked = () => existing && existing.status !== "unknown" && !isMod();
+  const statusLocked = () => false;
   $$("[data-st]", main).forEach((b) => (b.onclick = () => { if (!statusLocked()) setStatus(b.dataset.st); }));
 
   const countSw = () => {
