@@ -96,10 +96,26 @@ function readSoftwarePaste(text) {
 window.OLC_GAME_TEST = { readSoftwarePaste, isFullIp };
 
 /* ---------- data actions ---------- */
+/* A saved software level that goes up or down means the player is playing
+   again, so the IP becomes Active. Filling in an empty level, or clearing
+   one, doesn't count. If the save sets a status itself, that one is used.
+   Returns true when the IP was switched to Active. */
 async function upsertTarget(row) {
-  const { error } = await O().sb.from("targets").upsert(row, { onConflict: "ip" });
+  const { sb } = O();
+  let activated = false;
+  const swKeys = PROGRAMS.map((p) => p.key).filter((k) => row[k] !== undefined && row[k] !== null);
+  if (swKeys.length && !("status" in row)) {
+    const { data: old } = await sb.from("targets").select(["status", ...swKeys].join(",")).eq("ip", row.ip).maybeSingle();
+    if (old && old.status !== "active" && swKeys.some((k) => old[k] !== null && old[k] !== undefined && Number(old[k]) !== Number(row[k]))) {
+      row = { ...row, status: "active" };
+      activated = true;
+    }
+  }
+  const { error } = await sb.from("targets").upsert(row, { onConflict: "ip" });
   if (error) throw error;
+  return activated;
 }
+const activeNote = (on) => (on ? " · software changed, set to Active" : "");
 
 async function askScrambled(ip) {
   const ok = await O().confirmBox({
@@ -167,7 +183,7 @@ function keypadDialog(ip, target, startAt = 0) {
         document.removeEventListener("keydown", onKey);
         close();
         if (!Object.keys(changes).length) return done(false);
-        try { await upsertTarget({ ip, ...changes }); toast("Software saved"); done(true); }
+        try { const a = await upsertTarget({ ip, ...changes }); toast("Software saved" + activeNote(a)); done(true); }
         catch (e) { toast(errMsg(e), true); done(false); }
       };
       const next = () => {
@@ -227,7 +243,7 @@ function pasteDialog(ip, target) {
       $("[data-no]", w).onclick = () => { close(); done(false); };
       $("[data-yes]", w).onclick = async () => {
         close();
-        try { await upsertTarget({ ip, ...found }); toast(`Saved ${Object.keys(found).length} levels`); done(true); }
+        try { const a = await upsertTarget({ ip, ...found }); toast(`Saved ${Object.keys(found).length} levels` + activeNote(a)); done(true); }
         catch (e) { toast(errMsg(e), true); done(false); }
       };
     });
@@ -745,12 +761,13 @@ PAGES.add = async function pageAdd(main, prefill) {
     const btn = $("button[type=submit]", f);
     btnBusy(btn, true, "Saving…");
     try {
-      if (!existing || Object.keys(row).length > 1) await upsertTarget(row);
+      let a = false;
+      if (!existing || Object.keys(row).length > 1) a = await upsertTarget(row);
       if (wallet) {
         const { error } = await sb.rpc("link_wallet", { p_wallet: wallet, p_ip: ip });
         if (error) throw error;
       }
-      toast(existing ? "IP updated" : "IP saved");
+      toast((existing ? "IP updated" : "IP saved") + activeNote(a));
       O().go("ip/" + encodeURIComponent(ip));
     } catch (ex) { btnBusy(btn, false); errBox.textContent = errMsg(ex); }
   };
