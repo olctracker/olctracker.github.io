@@ -136,10 +136,10 @@ const NAV = [
   { id: "software", label: "Software", icon: "software" },
   { id: "spam", label: "Spam", icon: "spam" },
   { id: "siphon", label: "Siphon", icon: "siphon" },
-  { id: "leads", label: "Leads", icon: "leads", soon: 6 },
+  { id: "leads", label: "Leads", icon: "leads" },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
-  { id: "top", label: "Server Top 25", icon: "top", adminOnly: true, soon: 7 },
+  { id: "top", label: "Server Top 25", icon: "top", adminOnly: true },
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" }
 ];

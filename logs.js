@@ -230,7 +230,7 @@ async function saveParsed(p) {
       continue;
     }
     newL.push({ user_id: uid, attacker_ip: a.ip, wallet: a.wallet, amount: a.amount, at: a.at.toISOString(), hash: a.hash });
-    if (a.ip && !fullyHidden(a.ip)) leadEvents.push({ hash: `me:${uid}:${a.hash}`, ip: a.ip, wallet: a.wallet, stole: a.amount });
+    if (a.ip && !fullyHidden(a.ip)) leadEvents.push({ hash: `me:${uid}:${a.hash}`, ip: a.ip, wallet: a.wallet, at: a.at.toISOString() });
   }
   for (const c of chunks(newL, 500)) {
     const { error } = await sb.from("losses").upsert(c, { onConflict: "user_id,hash", ignoreDuplicates: true });
@@ -250,7 +250,7 @@ async function saveParsed(p) {
     const { error } = await sb.rpc("link_wallet", { p_wallet: w, p_ip: ip });
     if (!error) res.wallets++;
   }
-  // people who hit me become leads (shown in stage 6)
+  // people who hit me become leads too (IPs only, no amounts)
   if (leadEvents.length) await sb.rpc("ingest_leads", { p_events: leadEvents });
   return res;
 }
