@@ -120,6 +120,7 @@ const ICON = {
   dots: I('<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>'),
   plus: I('<path d="M12 5v14M5 12h14"/>'),
   x: I('<path d="M6 6l12 12M18 6L6 18"/>'),
+  copy: I('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/>'),
   check: I('<path d="M5 12l5 5 9-10"/>'),
   download: I('<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
   upload: I('<path d="M12 16V5M7 10l5-5 5 5"/><path d="M5 20h14"/>'),
@@ -861,6 +862,7 @@ async function pageReview(main) {
           ${f.note ? `<div class="small pre" style="margin-top:4px">${esc(f.note)}</div>` : ""}
           <div class="tiny muted">Flagged by ${esc(f.flagged_by || "—")}, ${fmtDateTime(f.created_at)}</div>
           <div class="row wrap" style="gap:6px;margin-top:8px">
+            <button class="btn sm" data-copyip="${esc(f.ip)}">${ICON.copy} Copy</button>
             ${f.kind === "spam_removed" ? `<button class="btn sm primary" data-flag="${f.id}" data-do="active" data-ip="${esc(f.ip)}">Set Active</button>
               <button class="btn sm" data-flag="${f.id}" data-do="resolve">Keep Inactive</button>`
             : `<a class="btn sm" href="#/ip/${encodeURIComponent(f.ip)}">Open IP</a>
@@ -884,6 +886,8 @@ async function pageReview(main) {
     if (error) return toast(errMsg(error), true);
     toast("Dismissed"); render();
   }));
+
+  $$("[data-copyip]").forEach((b) => (b.onclick = () => window.OLC_GAME.copy(b.dataset.copyip)));
 
   // review queue
   $$("[data-flag]").forEach((b) => (b.onclick = async () => {
