@@ -601,6 +601,8 @@ async function pageMod(main) {
     sb.from("flags").select("*").eq("resolved", false).order("created_at", { ascending: false }).limit(100)
   ]);
   const flags = flagR.data || [];
+  const { data: pspam } = await sb.from("possible_spam").select("*").eq("dismissed", false)
+    .order("per_hour", { ascending: false }).limit(100);
   const people = profR.data || [];
   const pending = people.filter((p) => !p.approved);
   const members = people.filter((p) => p.approved);
@@ -642,6 +644,15 @@ async function pageMod(main) {
               <button class="btn sm primary" data-flag="${f.id}" data-do="resolve">Mark fixed</button>`}
           </div></div></li>`).join("")}</ul>`
         : `<div class="empty">Nothing to review.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-h">Possible spam (100/hr)<span class="r">${(pspam || []).length}</span></div>
+      ${(pspam || []).length ? `<ul class="list">${pspam.map((p) => `
+        <li><div class="grow"><a class="mono" href="#/ip/${encodeURIComponent(p.ip)}">${esc(p.ip)}</a>
+          <div class="tiny muted">${p.per_hour ?? "—"}/hr · reported by ${esc(p.reported_by || "—")}, ${fmtDateTime(p.updated_at)}</div></div>
+          <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></li>`).join("")}</ul>`
+        : `<div class="empty">No 100/hr IPs reported.</div>`}
     </div>
 
     <div class="card">
@@ -731,6 +742,13 @@ async function pageMod(main) {
     const { error } = await sb.rpc("delete_user", { p_id: b.dataset.reject });
     if (error) return toast(errMsg(error), true);
     toast("Sign-up removed"); render();
+  }));
+
+  // possible spam
+  $$("[data-pspam]").forEach((b) => (b.onclick = async () => {
+    const { error } = await sb.from("possible_spam").update({ dismissed: true }).eq("ip", b.dataset.pspam);
+    if (error) return toast(errMsg(error), true);
+    toast("Dismissed"); render();
   }));
 
   // review queue

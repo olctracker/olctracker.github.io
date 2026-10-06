@@ -4,5 +4,5 @@ window.OLC_CONFIG = {
   supabaseUrl: "https://unypqibobllpxsbmzcin.supabase.co",
   supabaseKey: "sb_publishable_whz02drJkVIc6fAXXj8Mew_3QHmjOaf",
   emailDomain: "users.olcdatabase.app",
-  version: "1.4.1"
+  version: "1.4.2"
 };

@@ -249,7 +249,7 @@ PAGES.siphon = async function pageSiphon(main) {
     </div>
 
     <div class="card">
-      <div class="card-h">My siphons<span class="r">most siphoned first</span></div>
+      <div class="card-h">My siphons<span class="r">highest first</span></div>
       ${list.length ? `<ul class="list">${list.map((x) => `
         <li><div class="lv-pill mono"><small>LV</small>${x.level ?? "—"}</div>
           <div class="grow"><span class="mono ip-row">${esc(x.ip)}</span>
