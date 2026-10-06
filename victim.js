@@ -21,8 +21,26 @@ function walletPairs(text) {
 }
 window.OLC_VICTIM_TEST = { walletPairs };
 
+// Every IP and wallet ID in a pasted log (hidden IPs left out)
+function allKeys(text) {
+  const read = window.OLC_LOG_TEST.parseMyLog(text);
+  const keys = new Set();
+  [...read.visits, ...read.attacks].forEach((e) => {
+    if (!hidden(e.ip)) keys.add(e.ip);
+    if (e.wallet) keys.add(e.wallet);
+  });
+  return [...keys];
+}
+
 PAGES.victim = async function pageVictim(main) {
-  const { sb, esc, $, toast, btnBusy } = O();
+  const { sb, S, esc, $, toast, btnBusy, fmtDate } = O();
+  // targets I deleted from my Crypto tracker
+  const { data: dels } = await sb.from("target_deletions").select("target_key,deleted_at").eq("user_id", S.profile.id);
+  const deleted = new Map((dels || []).map((d) => [d.target_key, d.deleted_at]));
+  const delTag = (...keys) => {
+    const k = keys.find((x) => x && deleted.has(x));
+    return k ? ` <span class="badge del">deleted ${fmtDate(deleted.get(k))}</span>` : "";
+  };
   main.innerHTML = `
     <div class="card">
       <div class="card-h">Victim log</div>
@@ -42,9 +60,16 @@ PAGES.victim = async function pageVictim(main) {
     save.disabled = !pairs.length;
     prev.innerHTML = !ta.value.trim() ? "" : pairs.length ? `
       <div class="tiny mono muted" style="margin:10px 0 4px">${pairs.length} WALLET ID${pairs.length === 1 ? "" : "S"} FOUND</div>
-      <ul class="list">${pairs.map((p) => `<li><span class="mono grow">${esc(p.wallet)}</span>
+      <ul class="list">${pairs.map((p) => `<li><span class="mono grow">${esc(p.wallet)}${delTag(p.wallet, p.ip)}</span>
         <span class="mono small ${p.ip ? "" : "muted"}">${p.ip ? esc(p.ip) : "IP hidden"}</span></li>`).join("")}</ul>`
       : `<div class="empty">No wallet IDs found in this paste.</div>`;
+    if (ta.value.trim() && deleted.size) {
+      const shown = new Set(pairs.flatMap((p) => [p.wallet, p.ip]));
+      const extra = allKeys(ta.value).filter((k) => deleted.has(k) && !shown.has(k));
+      if (extra.length) prev.innerHTML += `
+        <div class="tiny mono muted" style="margin:12px 0 4px">PREVIOUSLY DELETED FROM YOUR TRACKER</div>
+        <ul class="list">${extra.map((k) => `<li><span class="mono grow">${esc(k)}</span>${delTag(k)}</li>`).join("")}</ul>`;
+    }
   };
   ta.addEventListener("input", show);
   $("[data-clear]", main).onclick = () => { ta.value = ""; show(); ta.focus(); };

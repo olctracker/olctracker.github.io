@@ -402,3 +402,4 @@ details[open] summary::before { content: "▾ "; }
 .lv-pill small { display: block; font-size: 9px; letter-spacing: .12em; color: var(--dim); font-weight: 600; }
 .miss-list { max-height: 46vh; overflow-y: auto; }
 select.input.sm-select { width: auto; flex: none; min-height: 38px; padding: 6px 10px; font-size: 14px; }
+.badge.del { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: var(--warn-soft); margin-left: 6px; }
