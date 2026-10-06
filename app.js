@@ -120,6 +120,7 @@ const ICON = {
   x: I('<path d="M6 6l12 12M18 6L6 18"/>'),
   check: I('<path d="M5 12l5 5 9-10"/>'),
   download: I('<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
+  upload: I('<path d="M12 16V5M7 10l5-5 5 5"/><path d="M5 20h14"/>'),
   build: I('<path d="M14 6l4 4M3 21l3-1 11-11-2-2L4 18l-1 3z"/>')
 };
 
@@ -140,6 +141,7 @@ const NAV = [
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
   { id: "top", label: "Server Top 25", icon: "top", adminOnly: true },
+  { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" }
 ];
@@ -166,6 +168,7 @@ function routeFromHash() {
   const r = parts[0];
   S.arg = parts[1] ? decodeURIComponent(parts[1]) : null;
   if (r === "ip" && S.arg) return "ip";
+  if (r === "add") return "add";
   const item = NAV.find((n) => n.id === r);
   if (!item) return "home";
   if (item.modOnly && !isMod()) return "home";
@@ -353,7 +356,7 @@ function renderNav() {
   const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()));
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
-    : `<a href="#/${n.id}" class="${(S.route === "ip" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
+    : `<a href="#/${n.id}" class="${(S.route === "ip" || S.route === "add" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
         ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
   ).join("");
   $$("#nav a").forEach((a) => (a.onclick = closeDrawer));
@@ -367,7 +370,7 @@ async function render() {
   if (!S.profile?.approved || !$("#main")) return;
   S.route = routeFromHash();
   stopClock();
-  const item = S.route === "ip" ? { id: "ip", label: "Target" } : NAV.find((n) => n.id === S.route);
+  const item = S.route === "ip" ? { id: "ip", label: "Target" } : S.route === "add" ? { id: "add", label: "Add IP" } : NAV.find((n) => n.id === S.route);
   $("#pageTitle").textContent = item.label;
   loadPendingCount().then(renderNav);
   renderNav();

@@ -132,42 +132,6 @@ function askIncorrect(ip) {
   });
 }
 
-/* ---------- Add IP: in-game IP, Active / Inactive, player level ---------- */
-function addIpDialog(prefill = "") {
-  const { modal, esc, $, $$, errMsg } = O();
-  return new Promise((done) => {
-    modal(`<h3>Add IP</h3>
-      <form>
-        <label class="f"><span>IP</span><input class="input mono" name="ip" inputmode="decimal" autocomplete="off" placeholder="123.45.67.89" value="${esc(prefill)}"></label>
-        <div class="f"><span class="flabel">Status</span>
-          <div class="seg" style="margin:0"><button type="button" data-st="active">Active</button><button type="button" data-st="inactive" class="on">Inactive</button></div></div>
-        <label class="f" style="margin-top:12px"><span>Player level</span><input class="input" name="lv" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="e.g. 32"></label>
-        <div class="err"></div>
-        <div class="btns"><button class="btn" type="button" data-no>Cancel</button><button class="btn primary" type="submit">Save</button></div>
-      </form>`,
-    (w, close) => {
-      let status = "inactive";
-      $$("[data-st]", w).forEach((b) => (b.onclick = () => {
-        status = b.dataset.st;
-        $$("[data-st]", w).forEach((x) => x.classList.toggle("on", x === b));
-      }));
-      $("[data-no]", w).onclick = () => { close(); done(null); };
-      const f = $("form", w);
-      if (!prefill) setTimeout(() => f.ip.focus(), 60);
-      f.onsubmit = async (e) => {
-        e.preventDefault();
-        const ip = tidyIp(f.ip.value), lv = f.lv.value.trim();
-        if (!isFullIp(ip)) { $(".err", w).textContent = "Enter a full IP like 123.45.67.89"; return; }
-        if (lv && !/^\d{1,4}$/.test(lv)) { $(".err", w).textContent = "Level must be a number"; return; }
-        const row = { ip, status };
-        if (lv) row.player_level = Number(lv);
-        try { await upsertTarget(row); } catch (err) { $(".err", w).textContent = errMsg(err); return; }
-        close(); done(ip);
-      };
-    });
-  });
-}
-
 /* ---------- keypad: steps through the 10 programs ----------
    Enter saves the typed number and moves on; Enter with nothing typed skips.
    Clear removes a level. Done (or reaching the end) saves everything. */
@@ -386,7 +350,7 @@ PAGES.ip = async function pageTarget(main, ip) {
   const refresh = () => render();
   $("[data-copy]", main).onclick = () => copy(ip);
   $$("[data-copyw]", main).forEach((b) => (b.onclick = () => copy(b.dataset.copyw)));
-  $("[data-add]", main) && ($("[data-add]", main).onclick = async () => { if (await addFlow(ip)) refresh(); });
+  $("[data-add]", main) && ($("[data-add]", main).onclick = () => addIp(ip));
   $("[data-edit-level]", main).onclick = async () => {
     const v = await numberDialog("Player level", t?.player_level);
     if (v === undefined) return;
@@ -451,7 +415,7 @@ PAGES.software = async function pageSoftware(main) {
         <input class="input mono grow" name="ip" inputmode="decimal" autocomplete="off" placeholder="123.45.67.89">
         <button class="btn primary" type="submit">Open</button>
       </form>
-      <button class="btn block ghost" data-add style="margin-top:10px">${IC.plus} Add IP with status &amp; level</button>
+      <button class="btn block ghost" data-add style="margin-top:10px">${IC.plus} Add IP</button>
     </div>
 
     <div class="card">
@@ -492,9 +456,7 @@ PAGES.software = async function pageSoftware(main) {
     if (!isFullIp(ip)) return toast("Enter a full IP like 123.45.67.89", true);
     O().go("ip/" + encodeURIComponent(ip));
   };
-  $("[data-add]", main).onclick = async () => {
-    await addFlow();
-  };
+  $("[data-add]", main).onclick = () => addIp();
 
   const { data: recent } = await sb.from("targets").select("*").order("updated_at", { ascending: false }).limit(15);
   const ul = $("[data-recent]", main);
@@ -571,13 +533,13 @@ PAGES.lookup = async function pageLookup(main) {
     $$("[data-scr]", out).forEach((b) => (b.onclick = async () => { if (await askScrambled(b.dataset.scr)) show(input.value); }));
     bindRows(out);
     const addThis = $("[data-addthis]", out);
-    if (addThis) addThis.onclick = () => addFlow(term);
+    if (addThis) addThis.onclick = () => addIp(term);
   };
 
   let timer;
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => show(input.value), 350); });
   $("[data-form]", main).onsubmit = (e) => { e.preventDefault(); clearTimeout(timer); input.blur(); show(input.value); };
-  $("[data-add]", main).onclick = () => addFlow();
+  $("[data-add]", main).onclick = () => addIp();
   show(saved);
 };
 
@@ -662,33 +624,138 @@ PAGES.spam = async function pageSpam(main) {
   };
 };
 
-/* ---------- one continuous add: details, then software, then the IP page ---------- */
-function softwareChoice(ip) {
-  const { modal, esc, $ } = O();
-  return new Promise((done) => {
-    modal(`<h3>Add software for ${esc(ip)}?</h3>
-      <p>Enter the levels one by one, or paste their software screen.</p>
-      <button class="btn primary block" data-c="keys">${IC.keys} Enter levels</button>
-      <button class="btn block" data-c="paste" style="margin-top:8px">${IC.paste} Paste software</button>
-      <button class="btn ghost block" data-c="skip" style="margin-top:8px">Skip for now</button>`,
-    (w, close) => {
-      w.querySelectorAll("[data-c]").forEach((b) => (b.onclick = () => { close(); done(b.dataset.c); }));
-    }, { sticky: true });
+/* =========================================================
+   ADD IP — one full screen  (#/add or #/add/<ip>)
+   IP, wallet ID, status, player level and all 10 software
+   levels, with a Paste option. If the IP is already saved, its
+   known values are filled in and only changes are saved.
+   ========================================================= */
+const addIp = (ip) => O().go("add" + (ip ? "/" + encodeURIComponent(ip) : ""));
+
+PAGES.add = async function pageAdd(main, prefill) {
+  const { sb, esc, $, $$, toast, errMsg, isMod, btnBusy } = O();
+  prefill = isFullIp(tidyIp(prefill)) ? tidyIp(prefill) : "";
+  const numIn = (name, ph = "") =>
+    `<input class="input mono" name="${name}" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="${ph}">`;
+
+  main.innerHTML = `
+    <a class="back-link" href="javascript:history.back()">${IC.back} Back</a>
+    <form data-form autocomplete="off">
+      <div class="card accent">
+        <div class="card-h">Add IP</div>
+        <label class="f"><span>IP</span><input class="input mono" name="ip" inputmode="decimal" placeholder="123.45.67.89" value="${esc(prefill)}"></label>
+        <div data-known></div>
+        <label class="f"><span>Wallet ID (optional)</span><input class="input mono" name="wallet" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. wasd...518c"></label>
+        <div class="f"><span class="flabel">Status</span>
+          <div class="seg" style="margin:0;grid-template-columns:1fr 1fr 1fr">
+            <button type="button" data-st="unknown">Unknown</button><button type="button" data-st="active">Active</button><button type="button" data-st="inactive" class="on">Inactive</button></div>
+          <div class="hint" data-st-hint></div></div>
+        <label class="f" style="margin-top:12px"><span>Player level</span>${numIn("player_level", "e.g. 32")}</label>
+      </div>
+
+      <div class="card">
+        <div class="card-h">Software<span class="r" data-swcount>0 of 10</span></div>
+        <button type="button" class="btn block" data-paste style="margin-bottom:12px">${IC.paste} Paste software screen</button>
+        <div data-pastebox hidden style="margin-bottom:12px">
+          <textarea class="input mono" rows="5" placeholder="Antivirus&#10;Scans and removes viruses…&#10;LVL 34&#10;…"></textarea>
+          <div class="tiny mono muted" data-pastemsg style="margin-top:6px"></div>
+        </div>
+        <div class="sw-form">${PROGRAMS.map((p) => `
+          <label class="f" style="margin:0"><span>${esc(p.name)}</span>${numIn(p.key, "—")}</label>`).join("")}</div>
+        <div class="hint">Leave a box empty if you don't know it.</div>
+      </div>
+
+      <div class="err" data-err></div>
+      <button class="btn primary block" type="submit">${IC.plus} Save IP</button>
+    </form>`;
+
+  const f = $("[data-form]", main), errBox = $("[data-err]", main);
+  let status = "inactive", existing = null, loadedFor = null;
+
+  const setStatus = (s) => {
+    status = s;
+    $$("[data-st]", main).forEach((b) => b.classList.toggle("on", b.dataset.st === s));
+  };
+  const statusLocked = () => existing && existing.status !== "unknown" && !isMod();
+  $$("[data-st]", main).forEach((b) => (b.onclick = () => { if (!statusLocked()) setStatus(b.dataset.st); }));
+
+  const countSw = () => {
+    const n = PROGRAMS.filter((p) => f[p.key].value.trim() !== "").length;
+    $("[data-swcount]", main).textContent = `${n} of 10`;
+  };
+  PROGRAMS.forEach((p) => f[p.key].addEventListener("input", countSw));
+
+  // If the IP is already saved, fill in what's known
+  const checkIp = async () => {
+    const ip = tidyIp(f.ip.value);
+    const box = $("[data-known]", main);
+    if (!isFullIp(ip)) { box.innerHTML = ""; existing = null; loadedFor = null; return; }
+    if (ip === loadedFor) return;
+    loadedFor = ip;
+    const [tR, wR] = await Promise.all([
+      sb.from("targets").select("*").eq("ip", ip).maybeSingle(),
+      sb.from("wallets").select("wallet").eq("ip", ip).limit(3)
+    ]);
+    if (tidyIp(f.ip.value) !== ip) return;
+    existing = tR.data || null;
+    const ws = (wR.data || []).map((w) => w.wallet);
+    if (existing) {
+      ["player_level", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
+        if (f[k].value.trim() === "" && existing[k] != null) f[k].value = existing[k];
+      });
+      setStatus(existing.status || "unknown");
+      if (!f.wallet.value.trim() && ws.length) f.wallet.value = ws[0];
+      countSw();
+    }
+    box.innerHTML = existing
+      ? `<div class="term small" style="margin:-4px 0 12px">&gt; Already saved. Known values are filled in; only changes are saved. <a href="${ipHref(ip)}">Open IP</a></div>`
+      : "";
+    $("[data-st-hint]", main).textContent = statusLocked() ? "Only a Mod can change a known status. Flag it on the IP page if it's wrong." : "";
+  };
+  f.ip.addEventListener("input", () => checkIp());
+  if (prefill) checkIp(); else setTimeout(() => f.ip.focus(), 60);
+
+  // Paste the software screen: fills the boxes
+  const pbox = $("[data-pastebox]", main), pta = $("textarea", pbox);
+  $("[data-paste]", main).onclick = () => { pbox.hidden = !pbox.hidden; if (!pbox.hidden) pta.focus(); };
+  pta.addEventListener("input", () => {
+    const found = readSoftwarePaste(pta.value);
+    Object.entries(found).forEach(([k, v]) => (f[k].value = v));
+    const n = Object.keys(found).length;
+    $("[data-pastemsg]", main).textContent = pta.value.trim() ? `FILLED IN ${n} OF ${PROGRAMS.length}` : "";
+    countSw();
   });
-}
-async function addFlow(prefill = "") {
-  const ip = await addIpDialog(prefill);
-  if (!ip) return false;
-  const choice = await softwareChoice(ip);
-  if (choice !== "skip") {
-    const { data: t } = await O().sb.from("targets").select("*").eq("ip", ip).maybeSingle();
-    if (choice === "keys") await keypadDialog(ip, t, 0);
-    else await pasteDialog(ip, t);
-  }
-  O().go("ip/" + encodeURIComponent(ip));
-  return true;
-}
+
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    errBox.textContent = "";
+    const ip = tidyIp(f.ip.value);
+    if (!isFullIp(ip)) return (errBox.textContent = "Enter a full IP like 123.45.67.89");
+    if (loadedFor !== ip) await checkIp();
+    const wallet = f.wallet.value.trim();
+    if (wallet && /\s/.test(wallet)) return (errBox.textContent = "Wallet ID can't contain spaces");
+    const row = { ip };
+    for (const k of ["player_level", ...PROGRAMS.map((p) => p.key)]) {
+      const v = f[k].value.trim();
+      if (v === "") continue;
+      if (!/^\d{1,4}$/.test(v)) return (errBox.textContent = "Levels must be numbers");
+      if (!existing || Number(existing[k]) !== Number(v) || existing[k] == null) row[k] = Number(v);
+    }
+    if (!existing || (existing.status !== status && !statusLocked())) row.status = status;
+    const btn = $("button[type=submit]", f);
+    btnBusy(btn, true, "Saving…");
+    try {
+      if (!existing || Object.keys(row).length > 1) await upsertTarget(row);
+      if (wallet) {
+        const { error } = await sb.rpc("link_wallet", { p_wallet: wallet, p_ip: ip });
+        if (error) throw error;
+      }
+      toast(existing ? "IP updated" : "IP saved");
+      O().go("ip/" + encodeURIComponent(ip));
+    } catch (ex) { btnBusy(btn, false); errBox.textContent = errMsg(ex); }
+  };
+};
 
 /* shared with later page modules */
-window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp };
+window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp, PROGRAMS, upsertTarget, addIp };
 })();

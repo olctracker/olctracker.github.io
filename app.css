@@ -403,3 +403,12 @@ details[open] summary::before { content: "▾ "; }
 .miss-list { max-height: 46vh; overflow-y: auto; }
 select.input.sm-select { width: auto; flex: none; min-height: 38px; padding: 6px 10px; font-size: 14px; }
 .badge.del { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); background: var(--warn-soft); margin-left: 6px; }
+
+/* add IP: software level boxes */
+.sw-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sw-form label.f > span { font-size: 10px; letter-spacing: .06em; }
+/* import preview */
+.imp-row { display: grid; grid-template-columns: 1fr 52px 52px; gap: 8px; align-items: center; font: 13px "JetBrains Mono", monospace; padding: 7px 0; border-top: 1px solid var(--line); }
+.imp-row.h { border-top: 0; font-size: 10.5px; letter-spacing: .1em; color: var(--faint); font-weight: 600; }
+.imp-row .miss { color: var(--warn); }
+.imp-row .bad { color: var(--danger); }
