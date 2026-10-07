@@ -384,7 +384,17 @@ PAGES.crypto = async function pageCrypto(main) {
   const uid = S.profile.id;
   const st = (() => { try { return JSON.parse(sessionStorage.getItem("olc-crypto") || "{}"); } catch (e) { return {}; } })();
   let period = st.period || "day", sort = st.sort || "total";
-  const keep = () => sessionStorage.setItem("olc-crypto", JSON.stringify({ period, sort, n: st.n, amt: st.amt }));
+  const keep = () => sessionStorage.setItem("olc-crypto", JSON.stringify({ period, sort }));
+  // Cleanup checker numbers are saved to the member's account (this device too, as a backup)
+  const savedClean = (() => { try { return JSON.parse(localStorage.getItem("olc-cleanup-" + uid) || "{}"); } catch (e) { return {}; } })();
+  st.n = S.profile.cleanup_visits || savedClean.n || 10;
+  st.amt = S.profile.cleanup_amount || savedClean.amt || 5000;
+  const saveClean = (n, amt) => {
+    try { localStorage.setItem("olc-cleanup-" + uid, JSON.stringify({ n, amt })); } catch (e) {}
+    if (n === S.profile.cleanup_visits && amt === S.profile.cleanup_amount) return;
+    S.profile.cleanup_visits = n; S.profile.cleanup_amount = amt;
+    sb.rpc("set_cleanup_defaults", { p_visits: n, p_amount: amt }).then(() => {}, () => {});
+  };
 
   const [visits, losses] = await Promise.all([
     fetchAll(() => sb.from("visits").select("ip,wallet,stolen,at").eq("user_id", uid).order("at")),
@@ -437,10 +447,10 @@ PAGES.crypto = async function pageCrypto(main) {
 
       <div class="card">
         <div class="card-h">Cleanup checker</div>
-        <p class="small muted" style="margin-top:0">Find targets that haven't paid off: less than the amount in total across their last visits.</p>
+        <p class="small muted" style="margin-top:0">Find targets that haven't paid off: less than the amount in total across their last visits. Your numbers are saved for next time.</p>
         <form data-clean class="row" style="gap:8px;align-items:flex-end">
-          <label class="f grow" style="margin:0"><span>Last visits</span><input class="input" name="n" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${esc(st.n || 10)}"></label>
-          <label class="f grow" style="margin:0"><span>Crypto</span><input class="input" name="amt" inputmode="numeric" pattern="[0-9]*" maxlength="9" value="${esc(st.amt || 5000)}"></label>
+          <label class="f grow" style="margin:0"><span>Last visits</span><input class="input" name="n" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${esc(st.n)}"></label>
+          <label class="f grow" style="margin:0"><span>Crypto</span><input class="input" name="amt" inputmode="numeric" pattern="[0-9]*" maxlength="9" value="${esc(st.amt)}"></label>
           <button class="btn primary" type="submit" style="min-height:48px">Check</button>
         </form>
         <div data-cleanout style="margin-top:12px"></div>
@@ -473,10 +483,10 @@ PAGES.crypto = async function pageCrypto(main) {
       e.preventDefault();
       const n = Number(e.target.n.value), amt = Number(e.target.amt.value);
       if (!(n >= 1) || !(amt >= 1)) return toast("Enter visits and an amount", true);
-      st.n = n; st.amt = amt; keep();
+      st.n = n; st.amt = amt; saveClean(n, amt);
       runClean(n, amt);
     };
-    if (st.n && st.amt) runClean(Number(st.n), Number(st.amt));
+    runClean(Number(st.n), Number(st.amt));
 
     $("[data-reboot]", main).onclick = async () => {
       if (!(await confirmBox({ title: "Reboot your crypto tracker?",
