@@ -875,8 +875,11 @@ async function pageReview(main) {
       <div class="card-h">Possible spam (100/hr)<span class="r">${(pspam || []).length}</span></div>
       ${(pspam || []).length ? `<ul class="list">${pspam.map((p) => `
         <li><div class="grow"><a class="mono" href="#/ip/${encodeURIComponent(p.ip)}">${esc(p.ip)}</a>
-          <div class="tiny muted">${p.per_hour ?? "—"}/hr · reported by ${esc(p.reported_by || "—")}, ${fmtDateTime(p.updated_at)}</div></div>
-          <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></li>`).join("")}</ul>`
+          <div class="tiny muted">${p.per_hour ?? "—"}/hr · reported by ${esc(p.reported_by || "—")}, ${fmtDateTime(p.updated_at)}</div>
+          <div class="row" style="gap:6px;margin-top:8px">
+            <button class="btn sm" data-copyip="${esc(p.ip)}">${ICON.copy} Copy</button>
+            <a class="btn sm primary" href="#/add/${encodeURIComponent(p.ip)}">Add to spam list</a>
+            <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></div></div></li>`).join("")}</ul>`
         : `<div class="empty">No 100/hr IPs reported.</div>`}
     </div>`;
 

@@ -31,7 +31,8 @@ const IC = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   paste: svg('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>'),
   keys: svg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>'),
-  search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/>')
+  search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/>'),
+  check: svg('<path d="M5 12l5 5 9-10"/>')
 };
 
 /* ---------- formatting helpers ---------- */
@@ -717,6 +718,8 @@ PAGES.add = async function pageAdd(main, prefill) {
             <button type="button" data-st="unknown">Unknown</button><button type="button" data-st="active">Active</button><button type="button" data-st="inactive" class="on">Inactive</button></div>
           <div class="hint" data-st-hint></div></div>
         <label class="f" style="margin-top:12px"><span>Player level</span>${numIn("player_level", "e.g. 32")}</label>
+        <button type="button" class="pool-toggle" data-pool aria-pressed="false"><span class="box">${IC.check}</span>
+          <span class="grow"><b>Add to inactive spam list</b><span class="tiny muted" data-pool-note>Shared with the crew. Saves the IP as Inactive.</span></span></button>
       </div>
 
       <div class="card">
@@ -736,12 +739,33 @@ PAGES.add = async function pageAdd(main, prefill) {
     </form>`;
 
   const f = $("[data-form]", main), errBox = $("[data-err]", main);
-  let status = "inactive", existing = null, loadedFor = null;
+  let status = "inactive", existing = null, loadedFor = null, toPool = false, report = null;
+  const poolBtn = $("[data-pool]", main), poolNote = $("[data-pool-note]", main);
+  const POOL_NOTE = "Shared with the crew. Saves the IP as Inactive.";
 
   const setStatus = (s) => {
     status = s;
     $$("[data-st]", main).forEach((b) => b.classList.toggle("on", b.dataset.st === s));
+    if (s !== "inactive" && toPool && !existing?.in_pool) setPool(false);
   };
+  const setPool = (on) => {
+    toPool = on;
+    poolBtn.classList.toggle("on", on);
+    poolBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    if (on && status !== "inactive") setStatus("inactive");
+  };
+  const paintPool = () => {
+    if (existing?.in_pool) {
+      poolBtn.disabled = true; setPool(true);
+      poolNote.textContent = "Already on the inactive spam list.";
+    } else {
+      poolBtn.disabled = false;
+      poolNote.textContent = report
+        ? `Reported at ${report.per_hour ?? "100+"}/hr by ${report.reported_by || "a member"}. Marked for the spam list as Inactive.`
+        : POOL_NOTE;
+    }
+  };
+  poolBtn.onclick = () => { if (!poolBtn.disabled) setPool(!toPool); };
   const statusLocked = () => false;
   $$("[data-st]", main).forEach((b) => (b.onclick = () => { if (!statusLocked()) setStatus(b.dataset.st); }));
 
@@ -758,12 +782,14 @@ PAGES.add = async function pageAdd(main, prefill) {
     if (!isFullIp(ip)) { box.innerHTML = ""; existing = null; loadedFor = null; return; }
     if (ip === loadedFor) return;
     loadedFor = ip;
-    const [tR, wR] = await Promise.all([
+    const [tR, wR, pR] = await Promise.all([
       sb.from("targets").select("*").eq("ip", ip).maybeSingle(),
-      sb.from("wallets").select("wallet").eq("ip", ip).limit(3)
+      sb.from("wallets").select("wallet").eq("ip", ip).limit(3),
+      sb.from("possible_spam").select("per_hour,reported_by").eq("ip", ip).eq("dismissed", false).maybeSingle()
     ]);
     if (tidyIp(f.ip.value) !== ip) return;
     existing = tR.data || null;
+    report = (pR && !pR.error && pR.data) || null;
     const ws = (wR.data || []).map((w) => w.wallet);
     if (existing) {
       ["player_level", "account_name", "crew_name", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
@@ -773,6 +799,11 @@ PAGES.add = async function pageAdd(main, prefill) {
       if (!f.wallet.value.trim() && ws.length) f.wallet.value = ws[0];
       countSw();
     }
+    // Reported at 100/hr: mark it for the spam list and Inactive
+    if (report && !existing?.in_pool) { setPool(true); setStatus("inactive"); }
+    else if (!report && !existing?.in_pool && toPool && poolBtn.dataset.auto) setPool(false);
+    poolBtn.dataset.auto = report ? "1" : "";
+    paintPool();
     box.innerHTML = existing
       ? `<div class="term small" style="margin:-4px 0 12px">&gt; Already saved. Known values are filled in; only changes are saved. <a href="${ipHref(ip)}">Open IP</a></div>`
       : "";
@@ -812,6 +843,8 @@ PAGES.add = async function pageAdd(main, prefill) {
       if (v && (!existing || existing[k] !== v)) row[k] = v;
     }
     if (!existing || (existing.status !== status && !statusLocked())) row.status = status;
+    const addingToPool = toPool && !existing?.in_pool;
+    if (addingToPool) { row.in_pool = true; row.status = "inactive"; }
     const btn = $("button[type=submit]", f);
     btnBusy(btn, true, "Saving…");
     try {
@@ -821,7 +854,8 @@ PAGES.add = async function pageAdd(main, prefill) {
         const { error } = await sb.rpc("link_wallet", { p_wallet: wallet, p_ip: ip });
         if (error) throw error;
       }
-      toast((existing ? "IP updated" : "IP saved") + activeNote(a));
+      if (addingToPool && report) await sb.from("possible_spam").update({ dismissed: true }).eq("ip", ip).then(() => {}, () => {});
+      toast((existing ? "IP updated" : "IP saved") + (addingToPool ? " · added to spam list" : "") + activeNote(a));
       O().go("ip/" + encodeURIComponent(ip));
     } catch (ex) { btnBusy(btn, false); errBox.textContent = errMsg(ex); }
   };
