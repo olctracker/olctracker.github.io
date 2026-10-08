@@ -3,7 +3,7 @@
    Paste columns copied from Google Sheets or Excel: IP, FW, level.
    A header row (IP / FW / LVL) is fine and sets the column order.
    Choose Active or Inactive, check the preview, then import.
-   - Inactive imports also go on the inactive spam list.
+   - Inactive imports at level 25+ also go on the inactive spam list.
    - Rows missing FW or level are imported and sent to the
      Mods' review queue with a note saying what's missing.
    ========================================================= */
@@ -58,6 +58,9 @@ window.OLC_IMPORT_TEST = { readImport };
 const chunks = (arr, n) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
+const POOL_MIN_LEVEL = 25;
+const toPool = (r, status) => status === "inactive" && r.lv !== null && r.lv >= POOL_MIN_LEVEL;
+
 /* ---------- saving ---------- */
 async function runImport(rows, status, progress) {
   const { sb } = O();
@@ -67,7 +70,7 @@ async function runImport(rows, status, progress) {
     const row = { ip: r.ip, status };
     if (r.fw !== null) row.firewall = r.fw;
     if (r.lv !== null) row.player_level = r.lv;
-    if (status === "inactive") row.in_pool = true;
+    if (toPool(r, status)) row.in_pool = true;
     const key = Object.keys(row).join(",");
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
@@ -96,7 +99,7 @@ async function runImport(rows, status, progress) {
       flagged += add.length;
     }
   }
-  return { imported: done, flagged };
+  return { imported: done, flagged, pooled: rows.filter((r) => toPool(r, status)).length };
 }
 
 /* ---------- page ---------- */
@@ -112,7 +115,7 @@ PAGES.import = async function pageImport(main) {
       <textarea class="input mono log-box" rows="7" placeholder="IP&#9;FW&#9;LVL&#10;76.176.81.120&#9;4&#9;32&#10;114.194.179.214&#9;6&#9;28"></textarea>
       <div class="f" style="margin-top:12px"><span class="flabel">Import as</span>
         <div class="seg" style="margin:0"><button type="button" data-st="active">Active</button><button type="button" data-st="inactive" class="on">Inactive</button></div>
-        <div class="hint" data-st-hint>Inactive IPs also go on the inactive spam list.</div></div>
+        <div class="hint" data-st-hint>Inactive IPs at level 25+ also go on the inactive spam list.</div></div>
     </div>
     <div data-prev></div>`;
 
@@ -120,7 +123,7 @@ PAGES.import = async function pageImport(main) {
   $$("[data-st]", main).forEach((b) => (b.onclick = () => {
     status = b.dataset.st;
     $$("[data-st]", main).forEach((x) => x.classList.toggle("on", x === b));
-    $("[data-st-hint]", main).textContent = status === "inactive" ? "Inactive IPs also go on the inactive spam list." : "Active IPs are saved but not added to the spam list.";
+    $("[data-st-hint]", main).textContent = status === "inactive" ? "Inactive IPs at level 25+ also go on the inactive spam list." : "Active IPs are saved but not added to the spam list.";
     draw();
   }));
 
@@ -130,6 +133,7 @@ PAGES.import = async function pageImport(main) {
     const { rows, skipped, dupes } = read;
     const miss = rows.filter((r) => r.missing.length);
     const show = rows.slice(0, 60);
+    const pool = rows.filter((r) => toPool(r, status)).length;
     prev.innerHTML = `
       <div class="tiles">
         <div class="tile"><div class="k">Ready</div><div class="v gain">${rows.length - miss.length}</div><div class="s">complete rows</div></div>
@@ -137,9 +141,10 @@ PAGES.import = async function pageImport(main) {
       </div>
       <div class="card">
         <div class="card-h">Preview<span class="r">${plural(rows.length, "IP", "IPs")}</span></div>
+        ${status === "inactive" && rows.length ? `<div class="small" style="margin:-4px 0 8px"><b class="gain">${pool}</b> <span class="muted">go on the spam list (level ${POOL_MIN_LEVEL}+)${rows.length - pool ? ` · ${rows.length - pool} don't` : ""}</span></div>` : ""}
         ${rows.length ? `
           <div class="imp-row h"><span>IP</span><span>FW</span><span>LVL</span></div>
-          ${show.map((r) => `<div class="imp-row"><span>${esc(r.ip)}</span>
+          ${show.map((r) => `<div class="imp-row"><span>${esc(r.ip)}${toPool(r, status) ? ` <span class="badge st-pool">spam</span>` : ""}</span>
             <span class="${r.fw === null ? "miss" : ""}">${r.fw ?? "—"}</span>
             <span class="${r.lv === null ? "miss" : ""}">${r.lv ?? "—"}</span></div>`).join("")}
           ${rows.length > show.length ? `<div class="tiny muted" style="margin-top:6px">+${rows.length - show.length} more</div>` : ""}`
@@ -157,7 +162,7 @@ PAGES.import = async function pageImport(main) {
     const rows = read.rows, miss = rows.filter((r) => r.missing.length).length;
     if (!(await confirmBox({
       title: `Import ${plural(rows.length, "IP", "IPs")} as ${status === "inactive" ? "Inactive" : "Active"}?`,
-      body: `Saved IPs get this status and the FW/level from your sheet.${status === "inactive" ? " They also go on the inactive spam list." : ""}${miss ? ` ${miss} with missing info go to the Mods' review queue.` : ""}`,
+      body: `Saved IPs get this status and the FW/level from your sheet.${status === "inactive" ? ` ${read.rows.filter((r) => toPool(r, status)).length} at level ${POOL_MIN_LEVEL}+ also go on the inactive spam list.` : ""}${miss ? ` ${miss} with missing info go to the Mods' review queue.` : ""}`,
       ok: "Import"
     }))) return;
     btnBusy(btn, true, "Importing…");
@@ -166,7 +171,7 @@ PAGES.import = async function pageImport(main) {
       toast(`Imported ${r.imported}${r.flagged ? ` · ${r.flagged} sent to Mods` : ""}`);
       ta.value = "";
       prev.innerHTML = `<div class="card"><div class="card-h">Done</div>
-        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to Mod Review.` : ""}</p></div>`;
+        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${status === "inactive" ? ` ${plural(r.pooled, "IP", "IPs")} added to the spam list (level ${POOL_MIN_LEVEL}+).` : ""}${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to Mod Review.` : ""}</p></div>`;
     } catch (e) { btnBusy(btn, false); toast(errMsg(e), true); }
   }
 
