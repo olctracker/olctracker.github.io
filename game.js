@@ -423,12 +423,19 @@ PAGES.ip = async function pageTarget(main, ip) {
   $("[data-inc]", main).onclick = () => askIncorrect(ip);
 };
 
+/* ---------- account · crew line for list rows ---------- */
+function whoLine(t) {
+  const e = O().esc;
+  if (!t || (!t.account_name && !t.crew_name)) return "";
+  return `<div class="who-line">${t.account_name ? `<b>${e(t.account_name)}</b>` : ""}${t.account_name && t.crew_name ? " · " : ""}${t.crew_name ? `<span>${e(t.crew_name)}</span>` : ""}</div>`;
+}
+
 /* ---------- reusable list row for an IP ---------- */
 function targetRow(t, extra = "") {
   const { esc } = O();
   return `<li class="tap" data-goto="${esc(t.ip)}">
     <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
-      <div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}</div>${extra}</div>
+      ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}</div>${extra}</div>
     <div class="row-badges">${badges(t)}</div>${IC.chev}</li>`;
 }
 function bindRows(root) {
@@ -544,7 +551,7 @@ PAGES.lookup = async function pageLookup(main) {
   const saved = sessionStorage.getItem("olc-lookup") || "";
   main.innerHTML = `
     <form class="searchbar" data-form>
-      ${IC.search}<input class="input" type="search" name="q" placeholder="Wallet ID or IP" autocomplete="off" autocapitalize="none" spellcheck="false" value="${esc(saved)}">
+      ${IC.search}<input class="input" type="search" name="q" placeholder="Wallet ID, IP, account or crew" autocomplete="off" autocapitalize="none" spellcheck="false" value="${esc(saved)}">
     </form>
     <button class="btn block ghost" data-add style="margin-bottom:14px">${IC.plus} Add IP</button>
     <div data-out></div>`;
@@ -554,7 +561,7 @@ PAGES.lookup = async function pageLookup(main) {
     const term = tidyTerm(raw);
     sessionStorage.setItem("olc-lookup", term);
     out.innerHTML = `<div class="loading" style="min-height:120px">Searching</div>`;
-    let wallets = [], ips = [];
+    let wallets = [], ips = [], named = [];
     if (!term) {
       wallets = (await sb.from("wallets").select("*").order("updated_at", { ascending: false }).limit(12)).data || [];
     } else {
@@ -562,10 +569,15 @@ PAGES.lookup = async function pageLookup(main) {
       const reqs = [sb.from("wallets").select("*").or(`wallet.ilike.*${term}*,ip.ilike.*${term}*`).limit(25)];
       if (isFullIp(term)) reqs.push(sb.from("wallets").select("*").contains("previous_ips", [term]).limit(25));
       if (looksIp) reqs.push(sb.from("targets").select("*").ilike("ip", `%${term}%`).limit(25));
-      const res = await Promise.all(reqs);
+      const nameTerm = String(raw || "").trim().replace(/[^A-Za-z0-9 ._-]/g, "").replace(/\s+/g, " ");
+      const nameReq = !looksIp && nameTerm.length >= 2
+        ? sb.from("targets").select("*").or(`account_name.ilike."*${nameTerm}*",crew_name.ilike."*${nameTerm}*"`).order("crew_name").limit(60)
+        : null;
+      const [res, nameRes] = await Promise.all([Promise.all(reqs), nameReq || Promise.resolve(null)]);
       const seen = new Set();
       res.slice(0, isFullIp(term) ? 2 : 1).forEach((r) => (r.data || []).forEach((w) => { if (!seen.has(w.wallet)) { seen.add(w.wallet); wallets.push(w); } }));
       if (looksIp) ips = res[res.length - 1].data || [];
+      if (nameRes && !nameRes.error) named = nameRes.data || [];
     }
     const full = [...new Set(wallets.map((w) => w.ip).filter(isFullIp))];
     const tmap = {};
@@ -576,7 +588,9 @@ PAGES.lookup = async function pageLookup(main) {
       ${wallets.map((w) => walletCard(w, tmap)).join("")}
       ${ips.length ? `<div class="card"><div class="card-h">IPs<span class="r">${ips.length}</span></div>
         <ul class="list">${ips.map((t) => targetRow(t)).join("")}</ul></div>` : ""}
-      ${term && !wallets.length && !ips.length ? `<div class="card"><div class="empty">Nothing found for <span class="mono">${esc(term)}</span>.</div>
+      ${named.length ? `<div class="card"><div class="card-h">Account &amp; crew matches<span class="r">${named.length}</span></div>
+        <ul class="list">${named.map((t) => targetRow(t)).join("")}</ul></div>` : ""}
+      ${term && !wallets.length && !ips.length && !named.length ? `<div class="card"><div class="empty">Nothing found for <span class="mono">${esc(term)}</span>.</div>
         ${isFullIp(term) ? `<button class="btn primary block" data-addthis>${IC.plus} Add ${esc(term)}</button>` : ""}</div>` : ""}
       ${!term && !wallets.length ? `<div class="card"><div class="empty">No wallets yet. They fill in as crew members paste logs (stage 4).</div></div>` : ""}`;
     $$("[data-copy]", out).forEach((b) => (b.onclick = () => copy(b.dataset.copy)));
@@ -642,7 +656,7 @@ PAGES.spam = async function pageSpam(main) {
       ? rows.map((t) => `<li class="tap" data-goto="${esc(t.ip)}">
           <div class="fw-pill mono"><small>FW</small>${dash(t.firewall)}</div>
           <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
-            <div class="tiny muted">LV ${dash(t.player_level)}${t.pool_added_by ? ` · added by ${esc(t.pool_added_by)}` : ""}</div></div>
+            ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)}${t.pool_added_by ? ` · added by ${esc(t.pool_added_by)}` : ""}</div></div>
           ${t.status !== "inactive" || t.scrambled ? `<div class="row-badges">${badges({ ...t, in_pool: false })}</div>` : ""}
           <button class="icon-btn" data-copy="${esc(t.ip)}" aria-label="Copy IP">${IC.copy}</button></li>`).join("")
       : `<li class="empty">No IPs match these filters.</li>`;
@@ -695,6 +709,8 @@ PAGES.add = async function pageAdd(main, prefill) {
         <div class="card-h">Add IP</div>
         <label class="f"><span>IP</span><input class="input mono" name="ip" inputmode="decimal" placeholder="123.45.67.89" value="${esc(prefill)}"></label>
         <div data-known></div>
+        <label class="f"><span>Account name (optional)</span><input class="input" name="account_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="In-game account name"></label>
+        <label class="f"><span>Crew (optional)</span><input class="input" name="crew_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Crew they belong to"></label>
         <label class="f"><span>Wallet ID (optional)</span><input class="input mono" name="wallet" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. wasd...518c"></label>
         <div class="f"><span class="flabel">Status</span>
           <div class="seg" style="margin:0;grid-template-columns:1fr 1fr 1fr">
@@ -750,7 +766,7 @@ PAGES.add = async function pageAdd(main, prefill) {
     existing = tR.data || null;
     const ws = (wR.data || []).map((w) => w.wallet);
     if (existing) {
-      ["player_level", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
+      ["player_level", "account_name", "crew_name", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
         if (f[k].value.trim() === "" && existing[k] != null) f[k].value = existing[k];
       });
       setStatus(existing.status || "unknown");
@@ -790,6 +806,10 @@ PAGES.add = async function pageAdd(main, prefill) {
       if (v === "") continue;
       if (!/^\d{1,4}$/.test(v)) return (errBox.textContent = "Levels must be numbers");
       if (!existing || Number(existing[k]) !== Number(v) || existing[k] == null) row[k] = Number(v);
+    }
+    for (const k of ["account_name", "crew_name"]) {
+      const v = f[k].value.trim().replace(/\s+/g, " ");
+      if (v && (!existing || existing[k] !== v)) row[k] = v;
     }
     if (!existing || (existing.status !== status && !statusLocked())) row.status = status;
     const btn = $("button[type=submit]", f);
