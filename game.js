@@ -271,6 +271,28 @@ function numberDialog(title, value) {
   });
 }
 
+/* ---------- small text prompt (account / crew name) ----------
+   Returns the trimmed text, null to clear it, or undefined if cancelled. */
+function textDialog(title, value, placeholder = "") {
+  const { modal, esc, $ } = O();
+  return new Promise((done) => {
+    modal(`<h3>${esc(title)}</h3>
+      <form><input class="input" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="${esc(placeholder)}" value="${esc(value ?? "")}">
+      <div class="hint">Leave empty to remove it.</div>
+      <div class="btns" style="margin-top:12px"><button class="btn" type="button" data-no>Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`,
+    (w, close) => {
+      const inp = $("input", w);
+      setTimeout(() => { inp.focus(); inp.select(); }, 60);
+      $("[data-no]", w).onclick = () => { close(); done(undefined); };
+      $("form", w).onsubmit = (e) => {
+        e.preventDefault();
+        const v = inp.value.trim().replace(/\s+/g, " ");
+        close(); done(v === "" ? null : v);
+      };
+    });
+  });
+}
+
 /* =========================================================
    TARGET PAGE  (#/ip/<ip>)
    ========================================================= */
@@ -298,6 +320,10 @@ PAGES.ip = async function pageTarget(main, ip) {
         <button class="icon-btn" data-copy aria-label="Copy IP">${IC.copy}</button>
       </div>
       <div style="margin:8px 0 14px">${badges(t)}</div>
+      <div class="who-box">
+        <button class="who-row" data-edit-name><span class="k">Account</span><span class="v ${t?.account_name ? "" : "muted"}">${t?.account_name ? esc(t.account_name) : "Add name"}</span>${IC.chev}</button>
+        <button class="who-row" data-edit-crew><span class="k">Crew</span><span class="v ${t?.crew_name ? "" : "muted"}">${t?.crew_name ? esc(t.crew_name) : "Add crew"}</span>${IC.chev}</button>
+      </div>
       <div class="stats">
         <button class="stat" data-edit-level><div class="k">Player level</div><div class="v">${dash(t?.player_level)}</div></button>
         <div class="stat"><div class="k">Firewall</div><div class="v">${dash(t?.firewall)}</div></div>
@@ -372,6 +398,14 @@ PAGES.ip = async function pageTarget(main, ip) {
     if (v === undefined) return;
     try { await upsertTarget({ ip, player_level: v }); toast("Level saved"); refresh(); } catch (e) { toast(errMsg(e), true); }
   };
+  const editText = async (field, title, ph) => {
+    const v = await textDialog(title, t?.[field], ph);
+    if (v === undefined) return;
+    try { await upsertTarget({ ip, [field]: v }); toast(v ? "Saved" : "Removed"); refresh(); }
+    catch (e) { toast(/column|schema/i.test(errMsg(e)) ? "Needs the latest database update (ask the Admin)" : errMsg(e), true); }
+  };
+  $("[data-edit-name]", main).onclick = () => editText("account_name", "Account name", "In-game account name");
+  $("[data-edit-crew]", main).onclick = () => editText("crew_name", "Crew name", "Crew they belong to");
   $$("[data-status]", main).forEach((b) => (b.onclick = async () => {
     try { await upsertTarget({ ip, status: b.dataset.status }); toast("Status saved"); refresh(); } catch (e) { toast(errMsg(e), true); }
   }));
