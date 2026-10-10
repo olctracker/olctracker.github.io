@@ -35,6 +35,10 @@ function readLine(raw) {
   if ((r = /^Stole ([\d,]+) Crypto from (\S+)$/i.exec(text))) return { m, kind: "stole", amount: num(r[1]), wallet: r[2] };
   if ((r = /^([\d,]+) Crypto transferred to (\S+)$/i.exec(text))) return { m, kind: "lost", amount: num(r[1]), wallet: r[2] };
   if (/^Cracking password on /i.test(text)) return { m, kind: "crack" };
+  if ((r = /^Downloading Lv\.?\s*(\d{1,4}) (.+?) from (\S+?)\.{0,3}$/i.exec(text))) {
+    const prog = G().PROGRAMS.find((x) => x.name.toLowerCase() === r[2].trim().toLowerCase());
+    if (prog) return { m, kind: "download", app: prog.key, level: Number(r[1]), ip: ipOrHidden(r[3]) };
+  }
   return { m, kind: "other" };
 }
 
@@ -63,9 +67,14 @@ function parseMyLog(text, now = new Date()) {
   }
   recs.reverse();                                   // oldest first
 
-  const visits = [], attacks = [];
+  const visits = [], attacks = [], dl = new Map();
   let open = null, lastAttack = null, unmatched = 0;
   for (const r of recs) {
+    if (r.kind === "download") {
+      // "Downloading LvN <program> from <IP>": that IP has the program at level N (newest line wins)
+      if (G().isFullIp(r.ip)) dl.set(r.ip + "|" + r.app, { ip: r.ip, app: r.app, level: r.level, at: r.at });
+      continue;
+    }
     if (r.kind === "visit") {
       const repeat = open && open.ip === r.ip && !fullyHidden(r.ip) && open.stolen === 0;
       if (repeat) { open.repeats++; continue; }
@@ -82,7 +91,7 @@ function parseMyLog(text, now = new Date()) {
       else { attacks.push({ ip: null, wallet: r.wallet, amount: r.amount, at: r.at, hash: r.hash }); }
     }
   }
-  return { visits, attacks, lines: recs.length, unmatched };
+  return { visits, attacks, downloads: [...dl.values()], lines: recs.length, unmatched };
 }
 
 /* ---------- crypto stats (pure) ----------
@@ -255,7 +264,38 @@ async function saveParsed(p) {
   }
   // people who hit me become leads too (IPs only, no amounts)
   if (leadEvents.length) await sb.rpc("ingest_leads", { p_events: leadEvents });
+  res.software = await saveDownloads(p.downloads || []);
   return res;
+}
+
+/* ---------- software seen in "Downloading LvN <program> from <IP>" lines ----------
+   Creates the IP if it isn't saved, or updates that program's level. Skipped when
+   the level is already saved, or when that program was updated after the log line
+   (so an old log never overwrites newer info). Crew devices are left out.
+   Returns how many IPs were updated. */
+async function saveDownloads(downloads) {
+  const { sb } = O();
+  const list = await G().dropCrew(downloads, (d) => [d.ip]);
+  if (!list.length) return 0;
+  const cols = ["ip", "sw_meta", ...G().PROGRAMS.map((x) => x.key)].join(",");
+  const saved = new Map();
+  for (const c of chunks([...new Set(list.map((d) => d.ip))], 150)) {
+    const { data } = await sb.from("targets").select(cols).in("ip", c);
+    (data || []).forEach((t) => saved.set(t.ip, t));
+  }
+  const rows = new Map();
+  for (const d of list) {
+    const t = saved.get(d.ip), meta = t && t.sw_meta && t.sw_meta[d.app];
+    if (t && Number(t[d.app]) === d.level) continue;                        // already right
+    if (meta && meta.at && new Date(meta.at).getTime() >= d.at.getTime()) continue;  // newer info saved
+    if (!rows.has(d.ip)) rows.set(d.ip, { ip: d.ip });
+    rows.get(d.ip)[d.app] = d.level;
+  }
+  let n = 0;
+  for (const row of rows.values()) {
+    try { await G().upsertTarget(row); n++; } catch (e) { /* skip this IP, keep the rest */ }
+  }
+  return n;
 }
 
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("en-US");
@@ -292,7 +332,7 @@ PAGES.logs = async function pageLogs(main) {
   let parsed = null;
   const show = () => {
     parsed = ta.value.trim() ? parseMyLog(ta.value) : null;
-    save.disabled = !parsed || (!parsed.visits.length && !parsed.attacks.length);
+    save.disabled = !parsed || (!parsed.visits.length && !parsed.attacks.length && !parsed.downloads.length);
     if (!parsed) { prev.innerHTML = ""; return; }
     const v = parsed.visits, a = parsed.attacks;
     const stolen = v.reduce((s, x) => s + x.stolen, 0), prox = v.filter((x) => !x.ip || fullyHidden(x.ip)).reduce((s, x) => s + x.stolen, 0);
@@ -304,6 +344,8 @@ PAGES.logs = async function pageLogs(main) {
         <div class="pv"><b>${fmt(prox)}</b><span>proxied</span></div>
         <div class="pv bad"><b>${fmt(lost)}</b><span>lost · ${a.length} hit${a.length === 1 ? "" : "s"}</span></div>
       </div>
+      ${parsed.downloads.length ? `<div class="tiny mono muted" style="margin-top:8px">SOFTWARE SEEN: ${parsed.downloads.map((d) =>
+          `${esc(d.ip)} ${esc(G().PROGRAMS.find((x) => x.key === d.app).name)} ${d.level}`).slice(0, 6).join(" · ")}${parsed.downloads.length > 6 ? ` · +${parsed.downloads.length - 6} more` : ""}</div>` : ""}
       ${!parsed.lines ? `<div class="err">No log lines found. Lines should start like [10-5 14:21].</div>` : ""}
       <ul class="list events">${[...v.map((x) => ({ ...x, t: "v" })), ...a.map((x) => ({ ...x, t: "a" }))]
         .sort((x, y) => y.at - x.at).slice(0, 12).map((e) => e.t === "v"
@@ -318,7 +360,7 @@ PAGES.logs = async function pageLogs(main) {
     try {
       const r = await saveParsed(parsed);
       ta.value = ""; show();
-      toast(`Saved ${r.visits} visit${r.visits === 1 ? "" : "s"} · +${fmt(r.stolen)} · ${r.attacks} hit${r.attacks === 1 ? "" : "s"}${r.skipped ? ` · ${r.skipped} already saved` : ""}`);
+      toast(`Saved ${r.visits} visit${r.visits === 1 ? "" : "s"} · +${fmt(r.stolen)} · ${r.attacks} hit${r.attacks === 1 ? "" : "s"}${r.software ? ` · ${r.software} IP${r.software === 1 ? "" : "s"} software updated` : ""}${r.skipped ? ` · ${r.skipped} already saved` : ""}`);
       loadRecent();
     } catch (e) { toast(errMsg(e), true); }
     finally { O().btnBusy(save, false); }
