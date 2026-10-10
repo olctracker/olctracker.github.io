@@ -13,6 +13,8 @@ const PAGES = (window.OLC_PAGES = window.OLC_PAGES || {});
 const LINE = /^\[(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})\]\s*(.+)$/;
 const fullyHidden = (ip) => /^x+\.x+\.x+\.x+$/i.test(ip || "");
 const num = (s) => Number(String(s).replace(/,/g, ""));
+// Anything that isn't an IP shape (like Ghost's "[UNKNOWN]") counts as a hidden IP
+const ipOrHidden = (s) => (/^[\dx]{1,3}(\.[\dx]{1,3}){3}$/i.test(s) ? s : "xx.xx.xx.xx");
 
 // Game log timestamps have no year. Use this year unless that lands in the future.
 function stampToDate(mo, d, h, mi, now) {
@@ -25,10 +27,11 @@ function stampToDate(mo, d, h, mi, now) {
 function readLine(raw) {
   const m = LINE.exec(raw.trim());
   if (!m) return null;
-  const text = m[5].replace(/\s*\[[A-Z]+\]\s*$/, "").trim();   // drop tags like [TRACED]
+  const text = m[5].replace(/\[UNKNOWN\]/gi, "xx.xx.xx.xx")      // Ghost class hides the IP
+    .replace(/\s*\[[A-Z]+\]\s*$/, "").trim();                    // drop tags like [TRACED]
   let r;
-  if ((r = /^Accessed device at (\S+?)\.{0,3}$/i.exec(text))) return { m, kind: "visit", ip: r[1] };
-  if ((r = /^Device accessed from (\S+?)\.{0,3}$/i.exec(text))) return { m, kind: "attacked", ip: r[1] };
+  if ((r = /^Accessed device at (\S+?)\.{0,3}$/i.exec(text))) return { m, kind: "visit", ip: ipOrHidden(r[1]) };
+  if ((r = /^Device accessed from (\S+?)\.{0,3}$/i.exec(text))) return { m, kind: "attacked", ip: ipOrHidden(r[1]) };
   if ((r = /^Stole ([\d,]+) Crypto from (\S+)$/i.exec(text))) return { m, kind: "stole", amount: num(r[1]), wallet: r[2] };
   if ((r = /^([\d,]+) Crypto transferred to (\S+)$/i.exec(text))) return { m, kind: "lost", amount: num(r[1]), wallet: r[2] };
   if (/^Cracking password on /i.test(text)) return { m, kind: "crack" };
