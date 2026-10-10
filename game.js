@@ -69,6 +69,7 @@ async function copy(text) {
 /* ---------- software-screen paste reader ----------
    Finds each known program name, then the "LVL n" line that follows it.
    Ignores descriptions, +/- change numbers, repeated names and Keygen.
+   Class bonuses like "LVL 7(+3)" are dropped: only the base level (7) is kept.
    Programs missing from the paste are simply not returned.
    opts.keygen: also return Keygen (My Device only; never stored for targets). */
 function readSoftwarePaste(text, opts = {}) {
@@ -80,14 +81,14 @@ function readSoftwarePaste(text, opts = {}) {
     const line = raw.trim().replace(/\s+/g, " ").toLowerCase();
     if (!line) continue;
     if (byName.has(line)) { current = byName.get(line); continue; }
-    const inline = /^([a-z ]+?)\s*[:\-]?\s+lv?l?\.?\s*(\d{1,4})$/.exec(line);
+    const inline = /^([a-z ]+?)\s*[:\-]?\s+lv?l?\.?\s*(\d{1,4})(?:\s*\(?\s*[+-]\s*\d{1,4}\s*\)?)?$/.exec(line);
     if (inline && byName.has(inline[1])) {
       const k = byName.get(inline[1]);
       if (k && !(k in levels)) levels[k] = Number(inline[2]);
       current = undefined;
       continue;
     }
-    const lvl = /^lv?l?\.?\s*(\d{1,4})$/.exec(line);
+    const lvl = /^lv?l?\.?\s*(\d{1,4})(?:\s*\(?\s*[+-]\s*\d{1,4}\s*\)?)?$/.exec(line);
     if (lvl) {
       if (current && !(current in levels)) levels[current] = Number(lvl[1]);
       current = undefined;
