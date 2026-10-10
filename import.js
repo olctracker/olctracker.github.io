@@ -64,6 +64,10 @@ const toPool = (r, status) => status === "inactive" && r.lv !== null && r.lv >= 
 /* ---------- saving ---------- */
 async function runImport(rows, status, progress) {
   const { sb } = O();
+  // crew devices are never targets: leave them out
+  const all = rows.length;
+  rows = await G().dropCrew(rows, (r) => [r.ip]);
+  const crewSkipped = all - rows.length;
   // rows with the same known fields go together, so a blank cell never wipes a saved value
   const groups = new Map();
   for (const r of rows) {
@@ -99,7 +103,7 @@ async function runImport(rows, status, progress) {
       flagged += add.length;
     }
   }
-  return { imported: done, flagged, pooled: rows.filter((r) => toPool(r, status)).length };
+  return { imported: done, flagged, crewSkipped, pooled: rows.filter((r) => toPool(r, status)).length };
 }
 
 /* ---------- page ---------- */
@@ -168,10 +172,10 @@ PAGES.import = async function pageImport(main) {
     btnBusy(btn, true, "Importing…");
     try {
       const r = await runImport(rows, status, (t) => (btn.textContent = t));
-      toast(`Imported ${r.imported}${r.flagged ? ` · ${r.flagged} sent to Mods` : ""}`);
+      toast(`Imported ${r.imported}${r.flagged ? ` · ${r.flagged} sent to Mods` : ""}${r.crewSkipped ? ` · ${r.crewSkipped} crew skipped` : ""}`);
       ta.value = "";
       prev.innerHTML = `<div class="card"><div class="card-h">Done</div>
-        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${status === "inactive" ? ` ${plural(r.pooled, "IP", "IPs")} added to the spam list (level ${POOL_MIN_LEVEL}+).` : ""}${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to Mod Review.` : ""}</p></div>`;
+        <p class="small" style="margin:0">Imported ${plural(r.imported, "IP", "IPs")} as ${status}.${status === "inactive" ? ` ${plural(r.pooled, "IP", "IPs")} added to the spam list (level ${POOL_MIN_LEVEL}+).` : ""}${r.flagged ? ` ${plural(r.flagged, "IP was", "IPs were")} sent to Mod Review.` : ""}${r.crewSkipped ? ` ${plural(r.crewSkipped, "crew device was", "crew devices were")} left out.` : ""}</p></div>`;
     } catch (e) { btnBusy(btn, false); toast(errMsg(e), true); }
   }
 

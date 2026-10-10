@@ -124,7 +124,10 @@ const ICON = {
   check: I('<path d="M5 12l5 5 9-10"/>'),
   download: I('<path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/>'),
   upload: I('<path d="M12 16V5M7 10l5-5 5 5"/><path d="M5 20h14"/>'),
-  build: I('<path d="M14 6l4 4M3 21l3-1 11-11-2-2L4 18l-1 3z"/>')
+  build: I('<path d="M14 6l4 4M3 21l3-1 11-11-2-2L4 18l-1 3z"/>'),
+  device: I('<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>'),
+  leveling: I('<path d="M4 20h4v-5H4zM10 20h4V10h-4zM16 20h4V4h-4z"/>'),
+  history: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
 };
 
 /* ---------------- routes ---------------- */
@@ -134,6 +137,10 @@ const NAV = [
   { sec: "Logs" },
   { id: "logs", label: "My Logs", icon: "log" },
   { id: "victim", label: "Victim Logs", icon: "victim" },
+  { sec: "My Info" },
+  { id: "device", label: "My Device", icon: "device" },
+  { id: "leveling", label: "Leveling Guide", icon: "leveling" },
+  { id: "history", label: "Level History", icon: "history" },
   { sec: "Tracking" },
   { id: "crypto", label: "Crypto", icon: "crypto" },
   { id: "lookup", label: "Lookup", icon: "lookup" },

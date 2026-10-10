@@ -3,9 +3,9 @@
 // right away), cache as backup for offline.
 // Fonts and the Supabase library: cache first.
 // Database requests are never cached.
-const CACHE = "olc-v19";
+const CACHE = "olc-v20";
 const SHELL = [
-  "./", "index.html", "app.css", "app.js", "config.js", "game.js", "logs.js", "slots.js", "victim.js", "leads.js", "import.js", "manifest.webmanifest",
+  "./", "index.html", "app.css", "app.js", "config.js", "game.js", "logs.js", "slots.js", "victim.js", "leads.js", "import.js", "myinfo.js", "manifest.webmanifest",
   "logo.svg", "icon-192.png", "icon-512.png", "icon-maskable.png", "apple-touch-icon.png"
 ];
 

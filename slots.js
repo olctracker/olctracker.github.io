@@ -123,7 +123,7 @@ async function loadSuggestions(mine) {
   const { data } = await sb.from("targets").select("ip,firewall,player_level,pool_added_by")
     .eq("in_pool", true).eq("status", "inactive").eq("scrambled", false).gte("player_level", 25)
     .order("firewall", { ascending: true, nullsFirst: false }).limit(10 + mine.size + 20);
-  return (data || []).filter((t) => !mine.has(t.ip))
+  return (await G().dropCrew(data || [], (t) => [t.ip])).filter((t) => !mine.has(t.ip))
     .sort((x, y) => (x.firewall ?? 1e9) - (y.firewall ?? 1e9) || (y.player_level ?? 0) - (x.player_level ?? 0))
     .slice(0, 10);
 }

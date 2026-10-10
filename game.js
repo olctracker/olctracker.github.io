@@ -69,10 +69,11 @@ async function copy(text) {
 /* ---------- software-screen paste reader ----------
    Finds each known program name, then the "LVL n" line that follows it.
    Ignores descriptions, +/- change numbers, repeated names and Keygen.
-   Programs missing from the paste are simply not returned. */
-function readSoftwarePaste(text) {
+   Programs missing from the paste are simply not returned.
+   opts.keygen: also return Keygen (My Device only; never stored for targets). */
+function readSoftwarePaste(text, opts = {}) {
   const byName = new Map(PROGRAMS.map((p) => [p.name.toLowerCase(), p.key]));
-  byName.set("keygen", null);                 // recognised, never stored
+  byName.set("keygen", opts.keygen ? "keygen" : null);
   const levels = {};
   let current;                                 // undefined = no program yet
   for (const raw of String(text || "").split(/\r?\n/)) {
@@ -96,6 +97,52 @@ function readSoftwarePaste(text) {
 }
 window.OLC_GAME_TEST = { readSoftwarePaste, isFullIp };
 
+/* ---------- crew devices: never targets ----------
+   Members' current device IPs and wallet IDs are hidden. The database hides them
+   from lists; these helpers catch direct lookups and show only "Crew member —
+   not a target" (never whose). Your own device shows "This is your device". */
+let ownDevice;                                   // undefined = not loaded yet
+async function myDevice(force) {
+  if (ownDevice !== undefined && !force) return ownDevice;
+  const uid = O().S.profile?.id;
+  const { data, error } = await O().sb.from("member_devices").select("*").eq("user_id", uid).maybeSingle();
+  ownDevice = error ? null : data || null;
+  return ownDevice;
+}
+const setMyDevice = (d) => (ownDevice = d || null);
+async function crewSet(keys) {
+  const list = [...new Set((keys || []).map((k) => String(k || "").trim()).filter(Boolean))];
+  const out = new Set();
+  for (let i = 0; i < list.length; i += 500) {
+    const { data, error } = await O().sb.rpc("crew_check", { p_keys: list.slice(i, i + 500) });
+    if (error) return out;                       // database update not run yet
+    (data || []).forEach((r) => out.add(typeof r === "string" ? r : r.crew_check));
+  }
+  return out;
+}
+/* "self", "crew" or null */
+async function crewInfo(key) {
+  key = String(key || "").trim();
+  if (!key) return null;
+  const me = await myDevice();
+  if (me && (me.ip === key || me.wallet === key)) return "self";
+  return (await crewSet([key])).has(key) ? "crew" : null;
+}
+/* drop rows whose IP (or wallet) belongs to a crew device, mine included */
+async function dropCrew(rows, keysOf) {
+  if (!rows || !rows.length) return rows || [];
+  const crew = await crewSet(rows.flatMap(keysOf));
+  return crew.size ? rows.filter((r) => !keysOf(r).some((k) => crew.has(k))) : rows;
+}
+const CREW_MSG = "Crew member — not a target";
+function crewCard(kind) {
+  return kind === "self"
+    ? `<div class="card accent"><div class="card-h">This is your device</div>
+        <p class="small muted" style="margin:0">Your own IP and wallet are never targets. Manage them in <a href="#/device">My Device</a>.</p></div>`
+    : `<div class="card warn"><div class="card-h">${CREW_MSG}</div>
+        <p class="small muted" style="margin:0">This belongs to a crew member's device. It's left out of every list and can't be saved or spammed.</p></div>`;
+}
+
 /* ---------- data actions ---------- */
 /* A saved software level that goes up or down means the player is playing
    again, so the IP becomes Active. Filling in an empty level, or clearing
@@ -113,7 +160,7 @@ async function upsertTarget(row) {
     }
   }
   const { error } = await sb.from("targets").upsert(row, { onConflict: "ip" });
-  if (error) throw error;
+  if (error) throw (/hide crew/i.test(error.message || "") ? new Error(CREW_MSG) : error);
   return activated;
 }
 const activeNote = (on) => (on ? " · software changed, set to Active" : "");
@@ -301,6 +348,8 @@ PAGES.ip = async function pageTarget(main, ip) {
   const { sb, esc, $, $$, toast, errMsg, isMod, render, fmtDateTime } = O();
   ip = tidyIp(ip);
   if (!isFullIp(ip)) { main.innerHTML = `<div class="card"><div class="card-h">Target</div><p>That isn't a full IP.</p></div>`; return; }
+  const who = await crewInfo(ip);
+  if (who) { main.innerHTML = `<a class="back-link" href="javascript:history.back()">${IC.back} Back</a>${crewCard(who)}`; return; }
 
   const [tR, curR, prevR] = await Promise.all([
     sb.from("targets").select("*").eq("ip", ip).maybeSingle(),
@@ -490,7 +539,7 @@ PAGES.software = async function pageSoftware(main) {
     q = prog === "all" ? q.or(PROGRAMS.map((p) => `${p.key}.eq.${n}`).join(",")) : q.eq(prog, n);
     const { data, error } = await q.limit(300);
     if (error) { results.innerHTML = `<div class="err">${esc(errMsg(error))}</div>`; return; }
-    let rows = (data || []).map((t) => ({ t, hits: PROGRAMS.filter((p) => t[p.key] === n) }));
+    let rows = (await dropCrew(data || [], (t) => [t.ip])).map((t) => ({ t, hits: PROGRAMS.filter((p) => t[p.key] === n) }));
     rows.sort((a, b) => (a.t.scrambled - b.t.scrambled) || (b.hits.length - a.hits.length) ||
       ((a.t.status === "inactive" ? 0 : 1) - (b.t.status === "inactive" ? 0 : 1)));
     if (!rows.length) { results.innerHTML = `<div class="empty">No IPs with ${prog === "all" ? "any program" : esc(PROGRAMS.find((p) => p.key === prog).name)} at level ${n}.</div>`; return; }
@@ -516,7 +565,7 @@ PAGES.software = async function pageSoftware(main) {
   };
   $("[data-add]", main).onclick = () => addIp();
 
-  const { data: recent } = await sb.from("targets").select("*").order("updated_at", { ascending: false }).limit(15);
+  const recent = await dropCrew((await sb.from("targets").select("*").order("updated_at", { ascending: false }).limit(15)).data || [], (t) => [t.ip]);
   const ul = $("[data-recent]", main);
   if (!ul) return;
   ul.innerHTML = (recent || []).length ? recent.map((t) => targetRow(t)).join("") : `<li class="empty">Nothing saved yet.</li>`;
@@ -580,6 +629,13 @@ PAGES.lookup = async function pageLookup(main) {
       if (looksIp) ips = res[res.length - 1].data || [];
       if (nameRes && !nameRes.error) named = nameRes.data || [];
     }
+    if (term.length >= 6) {
+      const who = await crewInfo(term);
+      if (who) { if (tidyTerm(input.value) === term) out.innerHTML = crewCard(who); return; }
+    }
+    wallets = await dropCrew(wallets, (w) => [w.wallet, w.ip].filter(Boolean));
+    ips = await dropCrew(ips, (t) => [t.ip]);
+    named = await dropCrew(named, (t) => [t.ip]);
     const full = [...new Set(wallets.map((w) => w.ip).filter(isFullIp))];
     const tmap = {};
     if (full.length) ((await sb.from("targets").select("*").in("ip", full)).data || []).forEach((t) => (tmap[t.ip] = t));
@@ -618,7 +674,7 @@ PAGES.spam = async function pageSpam(main) {
 
   const { data, error } = await sb.from("targets").select("*").eq("in_pool", true).limit(1000);
   if (error) throw error;
-  const all = (data || []).sort((a, b) =>
+  const all = (await dropCrew(data || [], (t) => [t.ip])).sort((a, b) =>
     ((a.firewall ?? 1e9) - (b.firewall ?? 1e9)) || ((b.player_level ?? 0) - (a.player_level ?? 0)));
 
   main.innerHTML = `
@@ -680,6 +736,7 @@ PAGES.spam = async function pageSpam(main) {
     err.textContent = "";
     if (!isFullIp(ip)) return (err.textContent = "Enter a full IP like 123.45.67.89");
     if (!/^\d{1,4}$/.test(fw) || !/^\d{1,4}$/.test(lv)) return (err.textContent = "Firewall and account level must be numbers");
+    if (await crewInfo(ip)) return (err.textContent = CREW_MSG);
     try {
       await upsertTarget({ ip, status: "inactive", firewall: Number(fw), player_level: Number(lv), in_pool: true });
       const { data: t } = await sb.from("targets").select("status").eq("ip", ip).maybeSingle();
@@ -739,7 +796,7 @@ PAGES.add = async function pageAdd(main, prefill) {
     </form>`;
 
   const f = $("[data-form]", main), errBox = $("[data-err]", main);
-  let status = "inactive", existing = null, loadedFor = null, toPool = false, report = null;
+  let status = "inactive", existing = null, loadedFor = null, toPool = false, report = null, crew = null;
   const poolBtn = $("[data-pool]", main), poolNote = $("[data-pool-note]", main);
   const POOL_NOTE = "Shared with the crew. Saves the IP as Inactive.";
 
@@ -782,6 +839,10 @@ PAGES.add = async function pageAdd(main, prefill) {
     if (!isFullIp(ip)) { box.innerHTML = ""; existing = null; loadedFor = null; return; }
     if (ip === loadedFor) return;
     loadedFor = ip;
+    crew = await crewInfo(ip);
+    if (tidyIp(f.ip.value) !== ip) return;
+    $("button[type=submit]", f).disabled = !!crew;
+    if (crew) { existing = null; report = null; box.innerHTML = crewCard(crew); return; }
     const [tR, wR, pR] = await Promise.all([
       sb.from("targets").select("*").eq("ip", ip).maybeSingle(),
       sb.from("wallets").select("wallet").eq("ip", ip).limit(3),
@@ -829,6 +890,7 @@ PAGES.add = async function pageAdd(main, prefill) {
     const ip = tidyIp(f.ip.value);
     if (!isFullIp(ip)) return (errBox.textContent = "Enter a full IP like 123.45.67.89");
     if (loadedFor !== ip) await checkIp();
+    if (crew) return (errBox.textContent = CREW_MSG);
     const wallet = f.wallet.value.trim();
     if (wallet && /\s/.test(wallet)) return (errBox.textContent = "Wallet ID can't contain spaces");
     const row = { ip };
@@ -862,5 +924,6 @@ PAGES.add = async function pageAdd(main, prefill) {
 };
 
 /* shared with later page modules */
-window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp, PROGRAMS, upsertTarget, addIp };
+window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp, PROGRAMS, upsertTarget, addIp,
+  readSoftwarePaste, myDevice, setMyDevice, crewSet, crewInfo, dropCrew, crewCard, CREW_MSG };
 })();
