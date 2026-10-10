@@ -457,9 +457,9 @@ PAGES.crypto = async function pageCrypto(main) {
       </div>
 
       <div class="card danger-zone">
-        <div class="card-h">Reboot</div>
-        <p class="small muted" style="margin-top:0">Rebooting in the game? This clears your crypto history only. Spam and Siphon are untouched.</p>
-        <button class="btn danger block" data-reboot>Reboot crypto tracker</button>
+        <div class="card-h">Reset</div>
+        <p class="small muted" style="margin-top:0">Clears your crypto history only. Spam and Siphon are untouched.</p>
+        <button class="btn danger block" data-reboot>Reset crypto tracker</button>
       </div>`;
 
     $$("[data-p]", main).forEach((b) => (b.onclick = () => { period = b.dataset.p; keep(); draw(); }));
@@ -489,13 +489,13 @@ PAGES.crypto = async function pageCrypto(main) {
     runClean(Number(st.n), Number(st.amt));
 
     $("[data-reboot]", main).onclick = async () => {
-      if (!(await confirmBox({ title: "Reboot your crypto tracker?",
+      if (!(await confirmBox({ title: "Reset your crypto tracker?",
         body: "All your visits, crypto totals and stolen-from-me history are cleared. Older log lines won't be counted again. This can't be undone.",
-        ok: "Reboot", danger: true }))) return;
+        ok: "Reset", danger: true }))) return;
       const { error } = await sb.rpc("reboot", { p_category: "crypto" });
       if (error) return toast(errMsg(error), true);
       S.profile.crypto_reset_at = new Date().toISOString();
-      toast("Crypto tracker rebooted");
+      toast("Crypto tracker reset");
       render();
     };
   };

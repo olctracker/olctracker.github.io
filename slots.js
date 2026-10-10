@@ -165,7 +165,7 @@ async function mountSpamSlots(box) {
         <li><div class="grow"><span class="mono ip-row">${esc(x.ip)}</span>
           <div class="tiny muted">LV ${x.level ?? "—"} · ${fmt(x.earned)} earned · ${esc(x.age || "—")}</div></div>
           <b class="mono ${(x.per_hour || 0) >= HIGH_RATE ? "gain" : ""}">${fmt(x.per_hour)}/hr</b></li>`).join("")}</ul>
-      <button class="btn danger block" data-reboot style="margin-top:12px">Reboot spam slots</button>
+      <button class="btn danger block" data-reboot style="margin-top:12px">Reset spam slots</button>
     </div>` : ""}`;
 
   const ta = $("textarea", box), prev = $("[data-prev]", box), save = $("[data-save]", box);
@@ -190,7 +190,7 @@ async function mountSpamSlots(box) {
   $$("[data-copy]", box).forEach((b) => (b.onclick = () => G().copy(b.dataset.copy)));
   $$("[data-flag]", box).forEach((b) => (b.onclick = () => flagSuggestion(b.dataset.flag, () => mountSpamSlots(box))));
   $("[data-reboot]", box) && ($("[data-reboot]", box).onclick = async () => {
-    if (!(await confirmBox({ title: "Reboot your spam slots?", body: "Clears your saved spam list only. Siphon and crypto are untouched.", ok: "Reboot", danger: true }))) return;
+    if (!(await confirmBox({ title: "Reset your spam slots?", body: "Clears your saved spam list only. Siphon and crypto are untouched.", ok: "Reset", danger: true }))) return;
     const { error } = await sb.rpc("reboot", { p_category: "spam" });
     if (error) return toast(errMsg(error), true);
     toast("Spam slots cleared"); mountSpamSlots(box);
@@ -227,7 +227,7 @@ window.OLC_SLOTS = { mountSpamSlots };
 /* =========================================================
    SIPHON PAGE — my siphon list, kept for reference
    New pastes update matching IPs and add new ones; older
-   entries stay until you remove them or reboot.
+   entries stay until you remove them or reset.
    ========================================================= */
 PAGES.siphon = async function pageSiphon(main) {
   const { sb, S, esc, $, $$, toast, errMsg, confirmBox, render, fmtDate } = O();
@@ -260,9 +260,9 @@ PAGES.siphon = async function pageSiphon(main) {
     </div>
 
     ${list.length ? `<div class="card danger-zone">
-      <div class="card-h">Reboot</div>
+      <div class="card-h">Reset</div>
       <p class="small muted" style="margin-top:0">Clears your siphon list only. Spam and crypto are untouched.</p>
-      <button class="btn danger block" data-reboot>Reboot siphon list</button>
+      <button class="btn danger block" data-reboot>Reset siphon list</button>
     </div>` : ""}`;
 
   const ta = $("textarea", main), prev = $("[data-prev]", main), save = $("[data-save]", main);
@@ -289,7 +289,7 @@ PAGES.siphon = async function pageSiphon(main) {
     render();
   }));
   $("[data-reboot]", main) && ($("[data-reboot]", main).onclick = async () => {
-    if (!(await confirmBox({ title: "Reboot your siphon list?", body: "Clears your saved siphon list only.", ok: "Reboot", danger: true }))) return;
+    if (!(await confirmBox({ title: "Reset your siphon list?", body: "Clears your saved siphon list only.", ok: "Reset", danger: true }))) return;
     const { error } = await sb.rpc("reboot", { p_category: "siphon" });
     if (error) return toast(errMsg(error), true);
     toast("Siphon list cleared"); render();
