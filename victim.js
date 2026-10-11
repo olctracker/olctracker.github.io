@@ -67,7 +67,7 @@ PAGES.victim = async function pageVictim(main) {
   main.innerHTML = `
     <div class="card">
       <div class="card-h">Victim log</div>
-      <p class="small muted" style="margin-top:0">Paste a log you viewed on another device. IPs go to <a href="#/leads">Leads</a> and wallet IDs are linked in Lookup. Crypto amounts are ignored.</p>
+      <p class="small muted" style="margin-top:0">Paste a log you viewed on another device. IPs go to <a href="#/leads">Leads</a>, wallet IDs are linked in Lookup and downloaded software levels are saved to those IPs. Crypto amounts are ignored.</p>
       <textarea class="input mono log-box" rows="8" placeholder="Paste the log here"></textarea>
       <div data-prev></div>
       <div class="row" style="gap:8px;margin-top:12px">
@@ -77,14 +77,15 @@ PAGES.victim = async function pageVictim(main) {
     </div>`;
 
   const ta = $("textarea", main), prev = $("[data-prev]", main), save = $("[data-save]", main);
-  let pairs = [], events = [];
+  let pairs = [], events = [], downloads = [];
   const show = () => {
     const text = ta.value.trim();
     const read = text ? window.OLC_LOG_TEST.parseMyLog(text) : null;
     pairs = read ? walletPairs(read) : [];
     events = read ? leadEvents(read) : [];
+    downloads = read ? read.downloads : [];
     const ips = leadIps(events);
-    save.disabled = !pairs.length && !events.length;
+    save.disabled = !pairs.length && !events.length && !downloads.length;
     if (!text) { prev.innerHTML = ""; return; }
     let h = "";
     h += ips.length ? `
@@ -96,6 +97,11 @@ PAGES.victim = async function pageVictim(main) {
       <div class="tiny mono muted" style="margin:12px 0 4px">${pairs.length} WALLET ID${pairs.length === 1 ? "" : "S"} FOUND</div>
       <ul class="list">${pairs.map((p) => `<li><span class="mono grow">${esc(p.wallet)}${delTag(p.wallet, p.ip)}</span>
         <span class="mono small ${p.ip ? "" : "muted"}">${p.ip ? esc(p.ip) : "IP hidden"}</span></li>`).join("")}</ul>` : "";
+    const progName = (k) => window.OLC_GAME.PROGRAMS.find((x) => x.key === k).name;
+    h += downloads.length ? `
+      <div class="tiny mono muted" style="margin:12px 0 4px">SOFTWARE SEEN</div>
+      <ul class="list">${downloads.map((d) => `<li><span class="mono grow">${esc(d.ip)}</span>
+        <span class="small">${esc(progName(d.app))} <b class="mono">${d.level}</b></span></li>`).join("")}</ul>` : "";
     if (!h) h = `<div class="empty">No IPs or wallet IDs found in this paste.</div>`;
     if (deleted.size) {
       const shown = new Set([...ips.flatMap((x) => [x.ip, x.wallet]), ...pairs.flatMap((p) => [p.wallet, p.ip])]);
@@ -119,11 +125,14 @@ PAGES.victim = async function pageVictim(main) {
       const { data, error } = await sb.rpc("ingest_leads", { p_events: events.slice(i, i + 300) });
       if (error) leadErr = error; else added += Number(data) || 0;
     }
+    let swN = 0;
+    if (downloads.length && window.OLC_LOGS) swN = await window.OLC_LOGS.saveDownloads(downloads).catch(() => 0);
     btnBusy(save, false);
     const ipCount = leadIps(events).length;
     const parts = [];
     if (ipCount) parts.push(leadErr ? null : `${ipCount} IP${ipCount === 1 ? "" : "s"} in Leads${added ? "" : " (already saved)"}`);
     if (pairs.length) parts.push(`linked ${linked} wallet ID${linked === 1 ? "" : "s"}`);
+    if (swN) parts.push(`${swN} IP${swN === 1 ? "" : "s"} software updated`);
     toast(parts.filter(Boolean).join(" · ") || "Saved");
     if (leadErr) toast(`Leads not saved: ${errMsg(leadErr)}`, true);
     ta.value = ""; show();

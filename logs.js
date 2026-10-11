@@ -298,6 +298,8 @@ async function saveDownloads(downloads) {
   return n;
 }
 
+window.OLC_LOGS = { saveDownloads };
+
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("en-US");
 const ago = (d) => {
   const s = (Date.now() - new Date(d)) / 1000;
