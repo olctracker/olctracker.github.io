@@ -26,7 +26,8 @@ function readSlotList(text) {
   const byIp = new Map();
   let cur = null, hidden = 0;
   for (const raw of String(text || "").split(/\r?\n/)) {
-    const line = raw.trim();
+    // drop a tag after the IP, like "xxx.xxx.xxx.xxx [PROXIED]" (a lone "[UNKNOWN]" stays)
+    const line = raw.trim().replace(/(\S)\s*\[[a-z ]+\]$/i, "$1");
     if (!line) continue;
     let m;
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) {
