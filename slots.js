@@ -36,7 +36,7 @@ function readSlotList(text) {
       continue;
     }
     if (HIDDEN_LINE.test(line)) {
-      cur = { ip: line.toLowerCase().replace(/[\[\]]/g, "") + "#" + (++hidden), level: null, per_hour: null, pct: null, amount: null, age: null };
+      cur = { ip: line + "#" + (++hidden), level: null, per_hour: null, pct: null, amount: null, age: null };
       out.push(cur);
       continue;
     }
