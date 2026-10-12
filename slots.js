@@ -15,10 +15,16 @@ const HIGH_RATE = 100;            // current top earning per hour
    rate or percent, amount, and age. Works for both lists:
      76.176.81.120 / LV.3 / 27/hr / 1,027 earned / 1d
      114.194.179.214 / LV.3 / 1.5% / 65 siphoned / 1d ago            */
+// Proxied entries show a hidden IP (xx.xx.xx.xx, xx.xx.12.4 or [UNKNOWN]). Each one is
+// its own slot, saved as "<shown text>#<n>" so it still counts toward the total.
+const HIDDEN_LINE = /^(?:[\dx*?]{1,3}(?:\.[\dx*?]{1,3}){3}|\[?unknown\]?|proxied|hidden)$/i;
+const isHiddenSlot = (ip) => String(ip || "").includes("#");
+const slotLabel = (ip) => (isHiddenSlot(ip) ? ip.split("#")[0] : ip);
+
 function readSlotList(text) {
   const out = [];
   const byIp = new Map();
-  let cur = null;
+  let cur = null, hidden = 0;
   for (const raw of String(text || "").split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -26,6 +32,11 @@ function readSlotList(text) {
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) {
       cur = byIp.get(line);
       if (!cur) { cur = { ip: line, level: null, per_hour: null, pct: null, amount: null, age: null }; byIp.set(line, cur); out.push(cur); }
+      continue;
+    }
+    if (HIDDEN_LINE.test(line)) {
+      cur = { ip: line.toLowerCase().replace(/[\[\]]/g, "") + "#" + (++hidden), level: null, per_hour: null, pct: null, amount: null, age: null };
+      out.push(cur);
       continue;
     }
     if (!cur) continue;
@@ -45,7 +56,7 @@ function ageHours(age) {
   return Number(m[1]) * ({ s: 1 / 3600, m: 1 / 60, h: 1, d: 24, w: 168 }[m[2].toLowerCase()]);
 }
 
-window.OLC_SLOT_TEST = { readSlotList, ageHours };
+window.OLC_SLOT_TEST = { readSlotList, ageHours, isHiddenSlot };
 
 const fmt = (n) => (n === null || n === undefined ? "—" : Math.round(Number(n)).toLocaleString("en-US"));
 
@@ -89,13 +100,16 @@ async function saveSpam(list, previous) {
   const uid = S.profile.id;
   const now = new Date().toISOString();
   const newIps = new Set(list.map((x) => x.ip));
-  const missing = previous.filter((p) => !newIps.has(p.ip)).map((p) => p.ip);
+  // proxied slots can't be matched between pastes: this paste replaces them all
+  const oldHidden = previous.filter((p) => isHiddenSlot(p.ip) && !newIps.has(p.ip)).map((p) => p.ip);
+  const missing = previous.filter((p) => !isHiddenSlot(p.ip) && !newIps.has(p.ip)).map((p) => p.ip);
   let decisions = {};
   if (missing.length) {
     decisions = await askMissing(missing);
     if (!decisions) return null;             // cancelled
   }
-  const res = { saved: list.length, removed: 0, reported: 0, kept: 0, high: 0 };
+  const res = { saved: list.length, removed: 0, reported: 0, kept: 0, high: 0, hidden: list.filter((x) => isHiddenSlot(x.ip)).length };
+  if (oldHidden.length) await sb.from("spam_slots").delete().eq("user_id", uid).in("ip", oldHidden);
   for (const ip of missing) {
     const d = decisions[ip];
     if (d === "keep") { res.kept++; continue; }
@@ -105,10 +119,18 @@ async function saveSpam(list, previous) {
   }
   if (list.length) {
     const rows = list.map((x) => ({ user_id: uid, ip: x.ip, level: x.level, per_hour: x.per_hour, earned: x.amount, age: x.age, updated_at: now }));
-    const { error } = await sb.from("spam_slots").upsert(rows, { onConflict: "user_id,ip" });
-    if (error) throw error;
+    const real = rows.filter((r) => !isHiddenSlot(r.ip)), hid = rows.filter((r) => isHiddenSlot(r.ip));
+    if (real.length) {
+      const { error } = await sb.from("spam_slots").upsert(real, { onConflict: "user_id,ip" });
+      if (error) throw error;
+    }
+    // saved separately so a problem with proxied slots never blocks the real ones
+    if (hid.length) {
+      const { error } = await sb.from("spam_slots").upsert(hid, { onConflict: "user_id,ip" });
+      if (error) { res.hiddenErr = error.message || "error"; res.saved -= hid.length; res.hidden = 0; }
+    }
   }
-  const high = list.filter((x) => (x.per_hour || 0) >= HIGH_RATE);
+  const high = list.filter((x) => !isHiddenSlot(x.ip) && (x.per_hour || 0) >= HIGH_RATE);
   if (high.length) {
     await sb.rpc("report_possible_spam", { p_ips: high.map((x) => x.ip), p_rates: high.map((x) => x.per_hour) });
     res.high = high.length;
@@ -162,7 +184,7 @@ async function mountSpamSlots(box) {
     ${mine.length ? `<div class="card">
       <div class="card-h">Current slots</div>
       <ul class="list">${mine.map((x) => `
-        <li><div class="grow"><span class="mono ip-row">${esc(x.ip)}</span>
+        <li><div class="grow"><span class="mono ip-row">${esc(slotLabel(x.ip))}</span>${isHiddenSlot(x.ip) ? ` <span class="badge">proxied</span>` : ""}
           <div class="tiny muted">LV ${x.level ?? "—"} · ${fmt(x.earned)} earned · ${esc(x.age || "—")}</div></div>
           <b class="mono ${(x.per_hour || 0) >= HIGH_RATE ? "gain" : ""}">${fmt(x.per_hour)}/hr</b></li>`).join("")}</ul>
       <button class="btn danger block" data-reboot style="margin-top:12px">Reset spam slots</button>
@@ -174,16 +196,18 @@ async function mountSpamSlots(box) {
     parsed = readSlotList(ta.value);
     save.disabled = !parsed.length;
     const high = parsed.filter((x) => (x.per_hour || 0) >= HIGH_RATE).length;
-    const gone = mine.filter((m) => !parsed.some((p) => p.ip === m.ip)).length;
+    const gone = mine.filter((m) => !isHiddenSlot(m.ip) && !parsed.some((p) => p.ip === m.ip)).length;
+    const hid = parsed.filter((x) => isHiddenSlot(x.ip)).length;
     prev.innerHTML = !ta.value.trim() ? "" : `<div class="tiny mono muted" style="margin-top:8px">
-      FOUND ${parsed.length} SLOT${parsed.length === 1 ? "" : "S"}${high ? ` · ${high} AT ${HIGH_RATE}/HR` : ""}${gone && parsed.length ? ` · ${gone} MISSING FROM LAST TIME` : ""}${parsed.length > MAX_SLOTS ? ` · MORE THAN ${MAX_SLOTS}?` : ""}</div>`;
+      FOUND ${parsed.length} SLOT${parsed.length === 1 ? "" : "S"}${hid ? ` · ${hid} PROXIED` : ""}${high ? ` · ${high} AT ${HIGH_RATE}/HR` : ""}${gone && parsed.length ? ` · ${gone} MISSING FROM LAST TIME` : ""}${parsed.length > MAX_SLOTS ? ` · MORE THAN ${MAX_SLOTS}?` : ""}</div>`;
   });
   save.onclick = async () => {
     O().btnBusy(save, true, "Saving…");
     try {
       const r = await saveSpam(parsed, mine);
       if (!r) { O().btnBusy(save, false); return; }
-      toast(`Saved ${r.saved} slots${r.removed ? ` · ${r.removed} removed` : ""}${r.reported ? (r.modActive ? ` · ${r.reported} set Active` : ` · ${r.reported} sent to Mods`) : ""}${r.high ? ` · ${r.high} at ${HIGH_RATE}/hr reported` : ""}`);
+      if (r.hiddenErr) toast(`Proxied slots not saved: ${r.hiddenErr}`, true);
+      toast(`Saved ${r.saved} slots${r.hidden ? ` (${r.hidden} proxied)` : ""}${r.removed ? ` · ${r.removed} removed` : ""}${r.reported ? (r.modActive ? ` · ${r.reported} set Active` : ` · ${r.reported} sent to Mods`) : ""}${r.high ? ` · ${r.high} at ${HIGH_RATE}/hr reported` : ""}`);
       mountSpamSlots(box);
     } catch (e) { toast(errMsg(e), true); O().btnBusy(save, false); }
   };
