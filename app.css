@@ -490,3 +490,6 @@ select.input.sm-select { width: auto; flex: none; min-height: 38px; padding: 6px
 .run-chips { margin: 0 0 14px; }
 .cmp tr[data-run] { cursor: pointer; }
 .tl li.tap { cursor: pointer; }
+/* Server Top 25: FW · PE */
+.fwpe { display: flex; gap: 10px; color: var(--dim); margin: 1px 0; }
+.fwpe b { color: var(--text); }

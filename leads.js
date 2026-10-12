@@ -93,6 +93,23 @@ PAGES.top = async function pageTop(main) {
   const cache = {};
   let siphon = null;
 
+  // FW and Password Encryptor saved on each IP (read from saved IPs, kept for this visit)
+  const sw = new Map();
+  async function loadSw(ips) {
+    const need = [...new Set(ips.filter((ip) => G().isFullIp(ip) && !sw.has(ip)))];
+    for (let i = 0; i < need.length; i += 150) {
+      const c = need.slice(i, i + 150);
+      const { data } = await sb.from("targets").select("ip,firewall,password_encryptor").in("ip", c);
+      c.forEach((ip) => sw.set(ip, null));
+      (data || []).forEach((t) => sw.set(t.ip, t));
+    }
+  }
+  const swLine = (ip) => {
+    if (!G().isFullIp(ip)) return "";
+    const t = sw.get(ip);
+    return `<div class="tiny mono fwpe"><span>FW <b>${t?.firewall ?? "—"}</b></span><span>PE <b>${t?.password_encryptor ?? "—"}</b></span></div>`;
+  };
+
   const head = () => `
     <div class="seg">
       <button data-tab="crypto" class="${tab === "crypto" ? "on" : ""}">Crypto</button>
@@ -118,6 +135,8 @@ PAGES.top = async function pageTop(main) {
     }
     if (tab !== "crypto" || key !== period + "|" + sort) return;
     const rows = cache[key];
+    await loadSw(rows.filter((r) => r.kind === "ip").map((r) => r.target));
+    if (tab !== "crypto" || key !== period + "|" + sort) return;
     const sum = rows.reduce((s, r) => s + Number(r.total || 0), 0);
     const name = (r) => r.kind === "ip" ? G().ipText(r.target) : `<span class="mono">${esc(r.target)}</span> <span class="badge">no IP</span>`;
     const who = (r) => {
@@ -138,7 +157,7 @@ PAGES.top = async function pageTop(main) {
         </div>
         ${rows.length ? `<ol class="rank">${rows.map((r, i) => `
           <li data-r="${i}" class="tap"><span class="rk mono">${i + 1}</span>
-            <div class="grow">${name(r)}
+            <div class="grow">${name(r)}${r.kind === "ip" ? swLine(r.target) : ""}
               <div class="tiny muted">${fmt(r.visit_count)} visit${Number(r.visit_count) === 1 ? "" : "s"} · avg ${fmt(r.avg_per_visit)}</div>
               <div class="tiny muted">by ${who(r)}</div></div>
             <b class="mono ${sort === "avg" ? "" : "gain"}">${fmt(sort === "avg" ? r.avg_per_visit : r.total)}</b></li>`).join("")}</ol>`
@@ -181,6 +200,8 @@ PAGES.top = async function pageTop(main) {
       .sort((a, b) => ssort === "pct" ? (Number(b.pct) || 0) - (Number(a.pct) || 0) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0)
         : (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0))
       .slice(0, 25);
+    await loadSw(rows.map((x) => x.ip));
+    if (tab !== "siphon") return;
     const sum = rows.reduce((s, x) => s + (Number(x.siphoned) || 0), 0);
     main.innerHTML = head() + `
       <div class="tiles">
@@ -195,7 +216,7 @@ PAGES.top = async function pageTop(main) {
         </div>
         ${rows.length ? `<ol class="rank">${rows.map((x, i) => `
           <li><span class="rk mono">${i + 1}</span>
-            <div class="grow">${G().ipText(x.ip)}
+            <div class="grow">${G().ipText(x.ip)}${swLine(x.ip)}
               <div class="tiny muted">LV ${x.level ?? "—"} · ${x.pct != null ? Number(x.pct) + "%" : "—"} · ${esc(x.age ? x.age + " ago" : "—")}</div>
               <div class="tiny muted">by ${esc(x.username)}</div></div>
             <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
