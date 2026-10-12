@@ -76,10 +76,15 @@ function parseMyLog(text, now = new Date()) {
       continue;
     }
     if (r.kind === "visit") {
-      const repeat = open && open.ip === r.ip && !fullyHidden(r.ip) && open.stolen === 0;
+      // same device again with nothing done in between is one visit (but coming back after
+      // starting a crack is a new visit: that's when the crypto gets stolen)
+      const repeat = open && open.ip === r.ip && !fullyHidden(r.ip) && open.stolen === 0 && !open.crack;
       if (repeat) { open.repeats++; continue; }
       open = { ip: r.ip, wallet: null, stolen: 0, at: r.at, hash: r.hash, theftHash: null, repeats: 0 };
       visits.push(open);
+    } else if (r.kind === "crack") {
+      // "Cracking password on …" can only be started while on the device: mark the open visit
+      if (open) open.crack = true;
     } else if (r.kind === "stole") {
       if (open && open.stolen === 0) { open.stolen = r.amount; open.wallet = r.wallet; open.theftHash = r.hash; }
       else { unmatched++; visits.push({ ip: null, wallet: r.wallet, stolen: r.amount, at: r.at, hash: r.hash, theftHash: r.hash, orphan: true, repeats: 0 }); }
@@ -91,7 +96,11 @@ function parseMyLog(text, now = new Date()) {
       else { attacks.push({ ip: null, wallet: r.wallet, amount: r.amount, at: r.at, hash: r.hash }); }
     }
   }
-  return { visits, attacks, downloads: [...dl.values()], lines: recs.length, unmatched };
+  // A visit used only to start a password crack isn't a crypto visit: the crypto is taken
+  // on a later visit. Those are left out (kept in crackVisits for Leads and cleanup).
+  const crackVisits = visits.filter((v) => v.crack && !v.stolen);
+  return { visits: visits.filter((v) => !(v.crack && !v.stolen)), crackVisits, attacks,
+    downloads: [...dl.values()], lines: recs.length, unmatched };
 }
 
 /* ---------- crypto stats (pure) ----------
@@ -194,6 +203,28 @@ async function saveParsed(p) {
   const { data: latest } = await sb.from("visits").select("id,ip,stolen,at,hash").eq("user_id", uid)
     .order("at", { ascending: false }).limit(1);
   let tail = latest && latest[0];
+
+  // Crack-start visits: if one was already saved as an empty visit (pasted before the crack
+  // started), remove it. Also the last saved visit, when it's the same device right before.
+  const crackDel = [];
+  const cracks = (p.crackVisits || []).filter((v) => v.at.getTime() >= reset);
+  for (const c of chunks(cracks.map((v) => v.hash), 150)) {
+    const { data } = await sb.from("visits").select("id,stolen").eq("user_id", uid).in("hash", c);
+    (data || []).filter((r) => !Number(r.stolen)).forEach((r) => crackDel.push(r.id));
+  }
+  const firstCounted = visits.reduce((m, v) => Math.min(m, v.at.getTime()), Infinity);
+  if (tail && !Number(tail.stolen) && !crackDel.includes(tail.id) && cracks.some((c) => c.ip === tail.ip && !fullyHidden(c.ip)
+      && c.at >= new Date(tail.at) && c.at.getTime() <= firstCounted)) {
+    crackDel.push(tail.id);
+    tail = null;
+  }
+  res.crackCleaned = 0;
+  for (const c of chunks(crackDel, 150)) {
+    const { data, error } = await sb.from("visits").delete().in("id", c).select("id");
+    if (!error) res.crackCleaned += (data || []).length;
+  }
+  res.crackCleanFail = crackDel.length - res.crackCleaned;   // the database didn't allow it
+  res.crackStarts = cracks.length;
 
   const inserts = [], updates = [];
   for (const v of visits) {
@@ -334,7 +365,7 @@ PAGES.logs = async function pageLogs(main) {
   let parsed = null;
   const show = () => {
     parsed = ta.value.trim() ? parseMyLog(ta.value) : null;
-    save.disabled = !parsed || (!parsed.visits.length && !parsed.attacks.length && !parsed.downloads.length);
+    save.disabled = !parsed || (!parsed.visits.length && !parsed.attacks.length && !parsed.downloads.length && !parsed.crackVisits.length);
     if (!parsed) { prev.innerHTML = ""; return; }
     const v = parsed.visits, a = parsed.attacks;
     const stolen = v.reduce((s, x) => s + x.stolen, 0), prox = v.filter((x) => !x.ip || fullyHidden(x.ip)).reduce((s, x) => s + x.stolen, 0);
@@ -346,6 +377,7 @@ PAGES.logs = async function pageLogs(main) {
         <div class="pv"><b>${fmt(prox)}</b><span>proxied</span></div>
         <div class="pv bad"><b>${fmt(lost)}</b><span>lost · ${a.length} hit${a.length === 1 ? "" : "s"}</span></div>
       </div>
+      ${parsed.crackVisits.length ? `<div class="tiny mono muted" style="margin-top:8px">${parsed.crackVisits.length} CRACK START${parsed.crackVisits.length === 1 ? "" : "S"} NOT COUNTED AS VISITS</div>` : ""}
       ${parsed.downloads.length ? `<div class="tiny mono muted" style="margin-top:8px">SOFTWARE SEEN: ${parsed.downloads.map((d) =>
           `${esc(d.ip)} ${esc(G().PROGRAMS.find((x) => x.key === d.app).name)} ${d.level}`).slice(0, 6).join(" · ")}${parsed.downloads.length > 6 ? ` · +${parsed.downloads.length - 6} more` : ""}</div>` : ""}
       ${!parsed.lines ? `<div class="err">No log lines found. Lines should start like [10-5 14:21].</div>` : ""}
@@ -362,7 +394,8 @@ PAGES.logs = async function pageLogs(main) {
     try {
       const r = await saveParsed(parsed);
       ta.value = ""; show();
-      toast(`Saved ${r.visits} visit${r.visits === 1 ? "" : "s"} · +${fmt(r.stolen)} · ${r.attacks} hit${r.attacks === 1 ? "" : "s"}${r.software ? ` · ${r.software} IP${r.software === 1 ? "" : "s"} software updated` : ""}${r.skipped ? ` · ${r.skipped} already saved` : ""}`);
+      toast(`Saved ${r.visits} visit${r.visits === 1 ? "" : "s"} · +${fmt(r.stolen)} · ${r.attacks} hit${r.attacks === 1 ? "" : "s"}${r.software ? ` · ${r.software} IP${r.software === 1 ? "" : "s"} software updated` : ""}${r.crackStarts ? ` · ${r.crackStarts} crack start${r.crackStarts === 1 ? "" : "s"} not counted` : ""}${r.crackCleaned ? ` · ${r.crackCleaned} empty visit${r.crackCleaned === 1 ? "" : "s"} removed` : ""}${r.skipped ? ` · ${r.skipped} already saved` : ""}`);
+      if (r.crackCleanFail) toast(`${r.crackCleanFail} earlier empty visit${r.crackCleanFail === 1 ? "" : "s"} couldn't be removed (database update needed)`, true);
       loadRecent();
     } catch (e) { toast(errMsg(e), true); }
     finally { O().btnBusy(save, false); }

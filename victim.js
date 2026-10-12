@@ -25,7 +25,7 @@ function walletPairs(read) {
 
 // One lead event per log line that names a full IP (no amounts)
 function leadEvents(read) {
-  return [...read.visits, ...read.attacks]
+  return [...read.visits, ...(read.crackVisits || []), ...read.attacks]
     .filter((e) => fullIp(e.ip))
     .map((e) => ({ hash: "vic:" + e.hash, ip: e.ip, wallet: e.wallet || null, at: e.at.toISOString() }));
 }
