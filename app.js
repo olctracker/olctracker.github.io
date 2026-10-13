@@ -417,7 +417,8 @@ async function pageHome(main) {
   if (settingsR.data) S.settings = settingsR.data;
   let poll = (pollR.data || [])[0];
   if (poll && poll.ends_at && new Date(poll.ends_at) < new Date()) poll = null;
-  const check = (checkR.data || [])[0];
+  let check = (checkR.data || [])[0];
+  if (S.profile.skip_checks) { poll = null; check = null; }       // set by the Admin
 
   let votes = [], myResp = null;
   if (poll) votes = (await sb.from("poll_votes").select("user_id,choice").eq("poll_id", poll.id)).data || [];
@@ -612,7 +613,7 @@ async function pageSettings(main) {
 async function pageMod(main) {
   const now = new Date().toISOString();
   const [profR, pollR, checkR] = await Promise.all([
-    sb.from("profiles").select("id,username,role,approved,created_at").order("created_at"),
+    sb.from("profiles").select("*").order("created_at"),
     sb.from("polls").select("*").eq("active", true).order("created_at", { ascending: false }).limit(1),
     sb.from("activity_checks").select("*").order("starts_at", { ascending: false }).limit(1)
   ]);
@@ -627,7 +628,7 @@ async function pageMod(main) {
   if (poll) votes = (await sb.from("poll_votes").select("choice").eq("poll_id", poll.id)).data || [];
   if (check) responses = (await sb.from("activity_responses").select("user_id").eq("check_id", check.id)).data || [];
   const responded = new Set(responses.map((r) => r.user_id));
-  const expected = members.filter((m) => new Date(m.created_at) < new Date(check?.ends_at || 0));
+  const expected = members.filter((m) => !m.skip_checks && new Date(m.created_at) < new Date(check?.ends_at || 0));
   const missing = expected.filter((m) => !responded.has(m.id));
 
   const canManage = (p) => p.id !== S.profile.id && (isAdmin() || p.role === "member");
@@ -646,7 +647,7 @@ async function pageMod(main) {
       <div class="card-h">Members<span class="r">${members.length}</span></div>
       <ul class="list">${members.map((p) => `
         <li><div class="grow"><div class="who">${esc(p.username)}${p.id === S.profile.id ? ` <span class="muted tiny">(you)</span>` : ""}</div>
-          <div class="tiny muted">Joined ${fmtDate(p.created_at)}</div></div>
+          <div class="tiny muted">Joined ${fmtDate(p.created_at)}${p.skip_checks ? ` · <span class="badge">skips checks</span>` : ""}</div></div>
           <span class="badge ${p.role}">${p.role}</span>
           ${canManage(p) ? `<button class="icon-btn" data-manage="${p.id}" aria-label="Manage ${esc(p.username)}">${ICON.dots}</button>` : `<span style="width:44px"></span>`}
         </li>`).join("")}</ul>
@@ -736,7 +737,8 @@ async function pageMod(main) {
     const p = members.find((m) => m.id === b.dataset.manage);
     modal(`<h3>${esc(p.username)}</h3><p><span class="badge ${p.role}">${p.role}</span></p>
       <button class="sheet-btn" data-act="pin">Reset PIN</button>
-      ${isAdmin() ? `<button class="sheet-btn" data-act="role">${p.role === "mod" ? "Remove Mod (make Member)" : "Make Mod"}</button>` : ""}
+      ${isAdmin() ? `<button class="sheet-btn" data-act="role">${p.role === "mod" ? "Remove Mod (make Member)" : "Make Mod"}</button>
+        <button class="sheet-btn" data-act="skip">${p.skip_checks ? "Include in activity checks &amp; polls" : "Skip activity checks &amp; polls"}</button>` : ""}
       <button class="sheet-btn danger" data-act="del">Delete account</button>
       <button class="btn block" data-act="close" style="margin-top:10px">Cancel</button>`,
       (w, close) => {
@@ -756,6 +758,16 @@ async function pageMod(main) {
           const { error } = await sb.rpc("set_role", { p_id: p.id, p_role: to });
           if (error) return toast(errMsg(error), true);
           toast("Role updated"); render();
+        });
+        $("[data-act=skip]", w) && ($("[data-act=skip]", w).onclick = async () => {
+          close();
+          const on = !p.skip_checks;
+          if (!(await confirmBox({ title: on ? `${p.username} skips checks and polls?` : `Include ${p.username} again?`,
+            body: on ? "They won't get activity checks or polls, and won't be counted in them. Any answer they gave to a running check or poll is removed."
+                     : "They'll get activity checks and polls again.", ok: "Confirm" }))) return;
+          const { error } = await sb.rpc("set_skip_checks", { p_id: p.id, p_on: on });
+          if (error) return toast(/set_skip_checks|function/i.test(errMsg(error)) ? "Needs the latest database update" : errMsg(error), true);
+          toast(on ? "Skips activity checks & polls" : "Included again"); render();
         });
         $("[data-act=del]", w).onclick = async () => {
           close();
