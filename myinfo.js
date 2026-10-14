@@ -346,8 +346,9 @@ PAGES.leveling = async function pageLeveling(main) {
             <button class="btn sm" data-done="${r.p.key}" aria-label="Done">${IC.check}</button>
           </div>
           ${r.safer ? `<div class="safer">
-            <div class="grow"><span class="tiny mono muted">SAFER</span> <span class="mono">${esc(r.safer.ip)}</span>
-              <span class="fw-mini mono">FW ${r.safer.fw}</span> <span class="mono">→ ${r.safer.lvl}</span>${skipNote(r.safer.skip)}</div>
+            <div class="grow"><div><span class="tiny mono muted">SAFER</span> <span class="mono">${esc(r.safer.ip)}</span>
+              <span class="fw-mini mono">FW ${r.safer.fw}</span></div>
+              <div>${esc(r.p.name)} <span class="mono">${r.mine} → <span class="to">${r.safer.lvl}</span></span></div>${skipNote(r.safer.skip)}</div>
             <button class="icon-btn" data-copy="${esc(r.safer.ip)}" aria-label="Copy IP">${IC.copy}</button>
           </div>` : ""}`).join("")}
       </div>`).join("")}

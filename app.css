@@ -493,3 +493,4 @@ select.input.sm-select { width: auto; flex: none; min-height: 38px; padding: 6px
 /* Server Top 25: FW · PE */
 .fwpe { display: flex; gap: 10px; color: var(--dim); margin: 1px 0; }
 .fwpe b { color: var(--text); }
+.safer .to { color: var(--accent); font-weight: 700; }
