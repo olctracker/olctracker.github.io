@@ -627,13 +627,28 @@ function walletCard(w, tmap) {
 PAGES.lookup = async function pageLookup(main) {
   const { sb, esc, $, $$, render } = O();
   const saved = sessionStorage.getItem("olc-lookup") || "";
+  let repF = { on: false, dir: "gt", amt: null };
+  try { repF = { ...repF, ...JSON.parse(sessionStorage.getItem("olc-lookup-rep") || "{}") }; } catch (e) {}
   main.innerHTML = `
     <form class="searchbar" data-form>
-      ${IC.search}<input class="input" type="search" name="q" placeholder="Wallet ID, IP, account or crew" autocomplete="off" autocapitalize="none" spellcheck="false" value="${esc(saved)}">
+      ${IC.search}<input class="input" type="search" name="q" placeholder="Wallet, IP, name, crew or tag" autocomplete="off" autocapitalize="none" spellcheck="false" value="${esc(saved)}">
     </form>
+    <div class="card compact">
+      <details class="fold" data-repfold ${repF.on ? "open" : ""}><summary>Reputation filter${repF.on ? ` <span class="tiny mono muted">· ${repF.dir === "gt" ? "more" : "less"} than ${fmtRep(repF.amt)}</span>` : ""}</summary>
+        <form data-repform style="margin-top:12px">
+          <div class="seg" style="margin-bottom:10px"><button type="button" data-dir="gt" class="${repF.dir === "gt" ? "on" : ""}">More than</button><button type="button" data-dir="lt" class="${repF.dir === "lt" ? "on" : ""}">Less than</button></div>
+          <div class="row" style="gap:8px">
+            <input class="input mono grow" name="amt" inputmode="numeric" pattern="[0-9,]*" maxlength="15" autocomplete="off" placeholder="e.g. 10,000" value="${repF.amt != null ? fmtRep(repF.amt) : ""}">
+            <button class="btn primary" type="submit">Show</button>
+          </div>
+          ${repF.on ? `<button type="button" class="btn sm ghost" data-repclear style="margin-top:8px">Clear filter</button>` : ""}
+        </form>
+      </details>
+    </div>
     <button class="btn block ghost" data-add style="margin-bottom:14px">${IC.plus} Add IP</button>
+    <div data-rep></div>
     <div data-out></div>`;
-  const out = $("[data-out]", main), input = $("input", main);
+  const out = $("[data-out]", main), input = $("input", main), repOut = $("[data-rep]", main);
 
   const show = async (raw) => {
     const term = tidyTerm(raw);
@@ -649,7 +664,7 @@ PAGES.lookup = async function pageLookup(main) {
       if (looksIp) reqs.push(sb.from("targets").select("*").ilike("ip", `%${term}%`).limit(25));
       const nameTerm = String(raw || "").trim().replace(/[^A-Za-z0-9 ._-]/g, "").replace(/\s+/g, " ");
       const nameReq = !looksIp && nameTerm.length >= 2
-        ? sb.from("targets").select("*").or(`account_name.ilike."*${nameTerm}*",crew_name.ilike."*${nameTerm}*"`).order("crew_name").limit(60)
+        ? sb.from("targets").select("*").or(`account_name.ilike."*${nameTerm}*",crew_name.ilike."*${nameTerm}*",crew_tag.ilike."*${nameTerm}*"`).order("crew_name").limit(60)
         : null;
       const [res, nameRes] = await Promise.all([Promise.all(reqs), nameReq || Promise.resolve(null)]);
       const seen = new Set();
@@ -673,7 +688,7 @@ PAGES.lookup = async function pageLookup(main) {
       ${wallets.map((w) => walletCard(w, tmap)).join("")}
       ${ips.length ? `<div class="card"><div class="card-h">IPs<span class="r">${ips.length}</span></div>
         <ul class="list">${ips.map((t) => targetRow(t)).join("")}</ul></div>` : ""}
-      ${named.length ? `<div class="card"><div class="card-h">Account &amp; crew matches<span class="r">${named.length}</span></div>
+      ${named.length ? `<div class="card"><div class="card-h">Account, crew &amp; tag matches<span class="r">${named.length}</span></div>
         <ul class="list">${named.map((t) => targetRow(t)).join("")}</ul></div>` : ""}
       ${term && !wallets.length && !ips.length && !named.length ? `<div class="card"><div class="empty">Nothing found for <span class="mono">${esc(term)}</span>.</div>
         ${isFullIp(term) ? `<button class="btn primary block" data-addthis>${IC.plus} Add ${esc(term)}</button>` : ""}</div>` : ""}
@@ -684,6 +699,38 @@ PAGES.lookup = async function pageLookup(main) {
     const addThis = $("[data-addthis]", out);
     if (addThis) addThis.onclick = () => addIp(term);
   };
+
+  /* reputation filter: IPs above / below an amount, highest rep first */
+  const REP_LIMIT = 200;
+  const showRep = async () => {
+    if (!repF.on) { repOut.innerHTML = ""; return; }
+    repOut.innerHTML = `<div class="card"><div class="empty">Loading…</div></div>`;
+    let q = sb.from("targets").select("*").not("reputation", "is", null);
+    q = repF.dir === "gt" ? q.gt("reputation", repF.amt) : q.lt("reputation", repF.amt);
+    const { data, error } = await q.order("reputation", { ascending: false }).limit(REP_LIMIT);
+    if (error) { repOut.innerHTML = `<div class="card"><div class="empty">${esc(error.message)}</div></div>`; return; }
+    const rows = await dropCrew(data || [], (t) => [t.ip]);
+    repOut.innerHTML = `<div class="card"><div class="card-h">Rep ${repF.dir === "gt" ? "more" : "less"} than ${fmtRep(repF.amt)}<span class="r">${rows.length}${(data || []).length >= REP_LIMIT ? "+" : ""}</span></div>
+      ${rows.length ? `<ul class="list">${rows.map((t) => targetRow(t)).join("")}</ul>
+        ${(data || []).length >= REP_LIMIT ? `<div class="hint">Showing the top ${REP_LIMIT}. Raise the amount to narrow it down.</div>` : ""}`
+        : `<div class="empty">No saved IPs with reputation ${repF.dir === "gt" ? "above" : "below"} ${fmtRep(repF.amt)}.</div>`}</div>`;
+    bindRows(repOut);
+  };
+  const saveRep = () => { try { sessionStorage.setItem("olc-lookup-rep", JSON.stringify(repF)); } catch (e) {} };
+  const rf = $("[data-repform]", main);
+  $$("[data-dir]", main).forEach((b) => (b.onclick = () => {
+    repF.dir = b.dataset.dir;
+    $$("[data-dir]", main).forEach((x) => x.classList.toggle("on", x === b));
+  }));
+  rf.onsubmit = (e) => {
+    e.preventDefault();
+    const v = rf.amt.value.replace(/[,\s]/g, "");
+    if (!/^\d{1,12}$/.test(v)) { O().toast("Enter an amount, like 10,000", true); return; }
+    repF = { ...repF, on: true, amt: Number(v) };
+    saveRep(); rf.amt.blur(); render();
+  };
+  $("[data-repclear]", main) && ($("[data-repclear]", main).onclick = () => { repF = { ...repF, on: false }; saveRep(); render(); });
+  showRep();
 
   let timer;
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => show(input.value), 350); });
