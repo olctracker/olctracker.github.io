@@ -6,7 +6,7 @@
    - New IPs are saved as Unknown.
    - Saved IPs keep their status, except: a changed software level → Active.
    - Blank cells never erase saved values. Imports never touch the spam list.
-   - Firewall and firewall_level must agree, or the row is skipped.
+   - If Firewall and firewall_level disagree, firewall_level wins (row is noted).
    - Rows still missing FW or level go to the Mods' review queue.
    - Crew devices are left out.
    ========================================================= */
@@ -102,7 +102,7 @@ function readImport(text, aliases = {}) {
     const cells = split(line).map((c) => c.trim());
     const ip = G().tidyIp(cells[ipCol]);
     if (!G().isFullIp(ip)) { bad.push({ line: line.trim(), reason: blank(cells[ipCol] || "") ? "No IP" : `"${cells[ipCol]}" isn't a full IP` }); continue; }
-    const vals = {}, problems = [];
+    const vals = {}, problems = [], notes = [];
     cols.forEach((c, i) => {
       if (!c.field || c.field === "ip") return;
       const raw = cells[i] ?? "";
@@ -116,12 +116,12 @@ function readImport(text, aliases = {}) {
     });
     if (vals.fw_check !== undefined) {
       if (vals.firewall !== undefined && vals.firewall !== vals.fw_check)
-        problems.push(`Firewall ${vals.firewall} but firewall_level ${vals.fw_check}`);
-      else vals.firewall = vals.fw_check;
+        notes.push(`Firewall ${vals.firewall} ignored, used firewall_level ${vals.fw_check}`);
+      vals.firewall = vals.fw_check;
       delete vals.fw_check;
     }
     if (rows.has(ip)) dupes++;
-    rows.set(ip, { ip, vals, problems });
+    rows.set(ip, { ip, vals, problems, notes });
   }
   const found = new Set(cols.map((c) => c.field).filter(Boolean));
   const notFound = FIELDS.filter((f) => !found.has(f.key)).map((f) => f.key);
@@ -294,7 +294,7 @@ PAGES.import = async function pageImport(main) {
   }
 
   /* rows */
-  const isProb = (r) => r.kind === "bad" || (r.missing && r.missing.length);
+  const isProb = (r) => r.kind === "bad" || (r.missing && r.missing.length) || (r.notes && r.notes.length);
   function rowHtml(r) {
     if (r.kind === "bad") {
       const v = r.vals || {};
@@ -313,7 +313,10 @@ PAGES.import = async function pageImport(main) {
       const old = r.old?.[k];
       return `<div class="${ch ? "chg" : ""}"><span>${label}</span> ${ch && old !== null && old !== undefined ? `<s>${esc(old)}</s> ` : ""}<b>${esc(G().dash(v[k]))}</b></div>`;
     };
-    const miss = r.missing.length ? `<div class="why" style="color:var(--warn)">! No ${esc(r.missing.join(" or "))} — imported and sent to Mod Review.</div>` : "";
+    const miss = [
+      ...(r.notes || []).map((n) => `! ${esc(n)}.`),
+      ...(r.missing.length ? [`! No ${esc(r.missing.join(" or "))} — imported and sent to Mod Review.`] : [])
+    ].map((t) => `<div class="why" style="color:var(--warn)">${t}</div>`).join("");
     return `<div class="ir ${miss ? "miss" : ""}">
       <div class="hd"><span class="ip">${esc(r.ip)}</span>${tag}${st}</div>
       ${who(r, v)}
