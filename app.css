@@ -530,3 +530,9 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 /* crew tag in IP lists; Add IP crew name + tag side by side */
 .tag { font-family: "JetBrains Mono", monospace; font-size: .86em; color: var(--accent); font-weight: 600; }
 .crew-pair { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 10px; }
+
+/* IP page: my own crypto visits */
+.you-line { display: flex; gap: 10px; align-items: baseline; margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--line-2); border-radius: 12px; background: var(--bg-2); }
+.you-line .k { flex: none; width: 58px; font: 600 10.5px "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.you-line .v { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
+.you-line b { font-family: "JetBrains Mono", monospace; font-weight: 600; }

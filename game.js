@@ -349,6 +349,45 @@ function crewHtml(t) {
   return `${t.crew_name ? e(t.crew_name) : ""}${t.crew_tag ? `${t.crew_name ? " " : ""}<span class="tag">[${e(t.crew_tag)}]</span>` : ""}`;
 }
 
+/* ---------- "You" line: my own Crypto visits to this IP (or its wallets) ----------
+   Always filtered to my user id, so even the Admin only sees their own. */
+async function myVisits(ip, wallets) {
+  const { sb, S } = O();
+  const uid = S.profile?.id;
+  if (!uid) return null;
+  const sel = "id,stolen,at";
+  const reqs = [sb.from("visits").select(sel).eq("user_id", uid).eq("ip", ip).limit(5000)];
+  if (wallets.length) reqs.push(sb.from("visits").select(sel).eq("user_id", uid).in("wallet", wallets).limit(5000));
+  const res = await Promise.all(reqs);
+  if (res.some((r) => r.error)) return null;
+  const byId = new Map();
+  res.forEach((r) => (r.data || []).forEach((v) => byId.set(v.id, v)));
+  const list = [...byId.values()].sort((a, b) => new Date(b.at) - new Date(a.at));
+  const hit = list.find((v) => Number(v.stolen) > 0);
+  return {
+    count: list.length,
+    total: list.reduce((n, v) => n + (Number(v.stolen) || 0), 0),
+    last: list[0]?.at || null,
+    lastHit: hit ? { amt: Number(hit.stolen), at: hit.at } : null
+  };
+}
+const agoShort = (d) => {
+  const s = (Date.now() - new Date(d).getTime()) / 1000;
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+};
+function youLine(m) {
+  if (!m) return "";
+  const { fmtDate } = O();
+  const n = (v) => Math.round(v).toLocaleString("en-US");
+  const shortDate = (d) => new Date(d).toLocaleDateString([], { month: "short", day: "numeric" });
+  if (!m.count) return `<div class="you-line"><span class="k">You</span><span class="v muted">Not visited yet</span></div>`;
+  return `<div class="you-line"><span class="k">You</span><span class="v">
+    <span>Last visit <b>${agoShort(m.last)}</b>${m.lastHit ? ` · stole <b class="gain">${n(m.lastHit.amt)}</b> on ${shortDate(m.lastHit.at)}` : " · nothing stolen yet"}</span>
+    <span class="muted">${n(m.count)} visit${m.count === 1 ? "" : "s"} · <b class="gain">${n(m.total)}</b> total</span></span></div>`;
+}
+
 /* =========================================================
    TARGET PAGE  (#/ip/<ip>)
    ========================================================= */
@@ -365,6 +404,7 @@ PAGES.ip = async function pageTarget(main, ip) {
     sb.from("wallets").select("*").contains("previous_ips", [ip])
   ]);
   const t = tR.data, cur = curR.data || [], prev = prevR.data || [];
+  const mine = await myVisits(ip, cur.map((w) => w.wallet));
   const known = t ? PROGRAMS.filter((p) => t[p.key] !== null && t[p.key] !== undefined).length : 0;
   const mod = isMod();
   const canSetStatus = true;
@@ -389,6 +429,7 @@ PAGES.ip = async function pageTarget(main, ip) {
         <div class="stat"><div class="k">Firewall</div><div class="v">${dash(t?.firewall)}</div></div>
         <div class="stat"><div class="k">Software</div><div class="v">${known}/10</div></div>
       </div>
+      ${youLine(mine)}
     </div>
 
     ${!t ? `<div class="card"><div class="card-h">Not saved yet</div>
