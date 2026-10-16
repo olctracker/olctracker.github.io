@@ -526,3 +526,7 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .fwpe { display: flex; gap: 10px; color: var(--dim); margin: 1px 0; }
 .fwpe b { color: var(--text); }
 .safer .to { color: var(--accent); font-weight: 700; }
+
+/* crew tag in IP lists; Add IP crew name + tag side by side */
+.tag { font-family: "JetBrains Mono", monospace; font-size: .86em; color: var(--accent); font-weight: 600; }
+.crew-pair { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 10px; }

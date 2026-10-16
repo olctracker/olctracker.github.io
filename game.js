@@ -300,11 +300,11 @@ function pasteDialog(ip, target) {
 }
 
 /* ---------- small number prompt (player level) ---------- */
-function numberDialog(title, value) {
+function numberDialog(title, value, digits = 4) {
   const { modal, esc, $ } = O();
   return new Promise((done) => {
     modal(`<h3>${esc(title)}</h3>
-      <input class="input" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="${esc(value ?? "")}">
+      <input class="input" inputmode="numeric" pattern="[0-9]*" maxlength="${digits + Math.floor((digits - 1) / 3)}" value="${esc(value ?? "")}">
       <div class="err"></div>
       <div class="btns"><button class="btn" data-no>Cancel</button><button class="btn primary" data-yes>Save</button></div>`,
     (w, close) => {
@@ -312,8 +312,8 @@ function numberDialog(title, value) {
       setTimeout(() => { inp.focus(); inp.select(); }, 60);
       $("[data-no]", w).onclick = () => { close(); done(undefined); };
       $("[data-yes]", w).onclick = () => {
-        const v = inp.value.trim();
-        if (v && !/^\d{1,4}$/.test(v)) { $(".err", w).textContent = "Numbers only"; return; }
+        const v = inp.value.trim().replace(/[,\s]/g, "");
+        if (v && !new RegExp(`^\\d{1,${digits}}$`).test(v)) { $(".err", w).textContent = "Numbers only"; return; }
         close(); done(v === "" ? null : Number(v));
       };
     });
@@ -342,6 +342,13 @@ function textDialog(title, value, placeholder = "") {
   });
 }
 
+const fmtRep = (v) => (v === null || v === undefined ? "—" : Number(v).toLocaleString("en-US"));
+function crewHtml(t) {
+  const e = O().esc;
+  if (!t || (!t.crew_name && !t.crew_tag)) return "";
+  return `${t.crew_name ? e(t.crew_name) : ""}${t.crew_tag ? `${t.crew_name ? " " : ""}<span class="tag">[${e(t.crew_tag)}]</span>` : ""}`;
+}
+
 /* =========================================================
    TARGET PAGE  (#/ip/<ip>)
    ========================================================= */
@@ -361,6 +368,8 @@ PAGES.ip = async function pageTarget(main, ip) {
   const known = t ? PROGRAMS.filter((p) => t[p.key] !== null && t[p.key] !== undefined).length : 0;
   const mod = isMod();
   const canSetStatus = true;
+  let moreOpen = false;
+  try { moreOpen = sessionStorage.getItem("olc-ip-more") === "1"; } catch (e) {}
 
   main.innerHTML = `
     <a class="back-link" href="javascript:history.back()">${IC.back} Back</a>
@@ -392,6 +401,15 @@ PAGES.ip = async function pageTarget(main, ip) {
           ${["unknown", "active", "inactive"].map((s) => `<button data-status="${s}" class="${t.status === s ? "on" : ""}">${s[0].toUpperCase() + s.slice(1)}</button>`).join("")}</div>
 `
         : `<div class="row"><span class="badge st-${esc(t.status)}">${esc(t.status)}</span><span class="small muted grow">Only Mods can change a known status. Wrong? Flag it below.</span></div>`}
+    </div>` : ""}
+
+    ${t ? `<div class="card">
+      <details class="fold" data-more ${moreOpen ? "open" : ""}><summary>Crew tag &amp; reputation</summary>
+        <div class="who-box" style="margin:12px 0 0">
+          <button class="who-row" data-edit-tag><span class="k">Tag</span><span class="v mono ${t.crew_tag ? "" : "muted"}">${t.crew_tag ? esc(t.crew_tag) : "Add crew tag"}</span>${IC.chev}</button>
+          <button class="who-row" data-edit-rep><span class="k">Rep</span><span class="v mono ${t.reputation != null ? "" : "muted"}">${t.reputation != null ? fmtRep(t.reputation) : "Add reputation"}</span>${IC.chev}</button>
+        </div>
+      </details>
     </div>` : ""}
 
     <div class="card">
@@ -457,6 +475,14 @@ PAGES.ip = async function pageTarget(main, ip) {
   };
   $("[data-edit-name]", main).onclick = () => editText("account_name", "Account name", "In-game account name");
   $("[data-edit-crew]", main).onclick = () => editText("crew_name", "Crew name", "Crew they belong to");
+  $("[data-more]", main) && $("[data-more]", main).addEventListener("toggle", (e) => { try { sessionStorage.setItem("olc-ip-more", e.target.open ? "1" : "0"); } catch (x) {} });
+  $("[data-edit-tag]", main) && ($("[data-edit-tag]", main).onclick = () => editText("crew_tag", "Crew tag", "Short tag, e.g. SS"));
+  $("[data-edit-rep]", main) && ($("[data-edit-rep]", main).onclick = async () => {
+    const v = await numberDialog("Reputation", t?.reputation, 12);
+    if (v === undefined) return;
+    try { await upsertTarget({ ip, reputation: v }); toast(v === null ? "Reputation removed" : "Reputation saved"); refresh(); }
+    catch (e) { toast(/column|schema/i.test(errMsg(e)) ? "Needs the latest database update (ask the Admin)" : errMsg(e), true); }
+  });
   $$("[data-status]", main).forEach((b) => (b.onclick = async () => {
     try { await upsertTarget({ ip, status: b.dataset.status }); toast("Status saved"); refresh(); } catch (e) { toast(errMsg(e), true); }
   }));
@@ -477,8 +503,9 @@ PAGES.ip = async function pageTarget(main, ip) {
 /* ---------- account · crew line for list rows ---------- */
 function whoLine(t) {
   const e = O().esc;
-  if (!t || (!t.account_name && !t.crew_name)) return "";
-  return `<div class="who-line">${t.account_name ? `<b>${e(t.account_name)}</b>` : ""}${t.account_name && t.crew_name ? " · " : ""}${t.crew_name ? `<span>${e(t.crew_name)}</span>` : ""}</div>`;
+  const crew = crewHtml(t);
+  if (!t || (!t.account_name && !crew)) return "";
+  return `<div class="who-line">${t.account_name ? `<b>${e(t.account_name)}</b>` : ""}${t.account_name && crew ? " · " : ""}${crew ? `<span>${crew}</span>` : ""}</div>`;
 }
 
 /* ---------- reusable list row for an IP ---------- */
@@ -486,7 +513,7 @@ function targetRow(t, extra = "") {
   const { esc } = O();
   return `<li class="tap" data-goto="${esc(t.ip)}">
     <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
-      ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}</div>${extra}</div>
+      ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}${t.reputation != null ? ` · REP ${fmtRep(t.reputation)}` : ""}</div>${extra}</div>
     <div class="row-badges">${badges(t)}</div>${IC.chev}</li>`;
 }
 function bindRows(root) {
@@ -714,7 +741,7 @@ PAGES.spam = async function pageSpam(main) {
       ? rows.map((t) => `<li class="tap" data-goto="${esc(t.ip)}">
           <div class="fw-pill mono"><small>FW</small>${dash(t.firewall)}</div>
           <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
-            ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)}${t.pool_added_by ? ` · added by ${esc(t.pool_added_by)}` : ""}</div></div>
+            ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)}${t.reputation != null ? ` · REP ${fmtRep(t.reputation)}` : ""}${t.pool_added_by ? ` · added by ${esc(t.pool_added_by)}` : ""}</div></div>
           ${t.status !== "inactive" || t.scrambled ? `<div class="row-badges">${badges({ ...t, in_pool: false })}</div>` : ""}
           <button class="icon-btn" data-copy="${esc(t.ip)}" aria-label="Copy IP">${IC.copy}</button></li>`).join("")
       : `<li class="empty">No IPs match these filters.</li>`;
@@ -769,7 +796,11 @@ PAGES.add = async function pageAdd(main, prefill) {
         <label class="f"><span>IP</span><input class="input mono" name="ip" inputmode="decimal" placeholder="123.45.67.89" value="${esc(prefill)}"></label>
         <div data-known></div>
         <label class="f"><span>Account name (optional)</span><input class="input" name="account_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="In-game account name"></label>
-        <label class="f"><span>Crew (optional)</span><input class="input" name="crew_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Crew they belong to"></label>
+        <div class="crew-pair">
+          <label class="f"><span>Crew (optional)</span><input class="input" name="crew_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Crew they belong to"></label>
+          <label class="f"><span>Tag</span><input class="input mono" name="crew_tag" maxlength="12" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="SS"></label>
+        </div>
+        <label class="f"><span>Reputation (optional)</span><input class="input mono" name="reputation" inputmode="numeric" pattern="[0-9,]*" maxlength="15" autocomplete="off" placeholder="e.g. 14250"></label>
         <label class="f"><span>Wallet ID (optional)</span><input class="input mono" name="wallet" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="e.g. wasd...518c"></label>
         <div class="f"><span class="flabel">Status</span>
           <div class="seg" style="margin:0;grid-template-columns:1fr 1fr 1fr">
@@ -854,7 +885,7 @@ PAGES.add = async function pageAdd(main, prefill) {
     report = (pR && !pR.error && pR.data) || null;
     const ws = (wR.data || []).map((w) => w.wallet);
     if (existing) {
-      ["player_level", "account_name", "crew_name", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
+      ["player_level", "account_name", "crew_name", "crew_tag", "reputation", ...PROGRAMS.map((p) => p.key)].forEach((k) => {
         if (f[k].value.trim() === "" && existing[k] != null) f[k].value = existing[k];
       });
       setStatus(existing.status || "unknown");
@@ -901,7 +932,12 @@ PAGES.add = async function pageAdd(main, prefill) {
       if (!/^\d{1,4}$/.test(v)) return (errBox.textContent = "Levels must be numbers");
       if (!existing || Number(existing[k]) !== Number(v) || existing[k] == null) row[k] = Number(v);
     }
-    for (const k of ["account_name", "crew_name"]) {
+    const rep = f.reputation.value.trim().replace(/[,\s]/g, "");
+    if (rep !== "") {
+      if (!/^\d{1,12}$/.test(rep)) return (errBox.textContent = "Reputation must be a number");
+      if (!existing || Number(existing.reputation) !== Number(rep) || existing.reputation == null) row.reputation = Number(rep);
+    }
+    for (const k of ["account_name", "crew_name", "crew_tag"]) {
       const v = f[k].value.trim().replace(/\s+/g, " ");
       if (v && (!existing || existing[k] !== v)) row[k] = v;
     }
