@@ -433,12 +433,37 @@ async function deleteTarget(t) {
   if (!(await confirmBox({ title: `Delete ${name} from your stats?`,
     body: "Removes your visits and crypto for this target. Its IP and wallet stay in Lookup. Older log lines for it won't be counted again.",
     ok: "Delete", danger: true }))) return false;
+  const error = await removeTarget(t);
+  if (error) { toast(errMsg(error), true); return false; }
+  toast("Deleted from your stats");
+  return true;
+}
+// Removes one target from my stats (no prompt). Returns an error or null.
+async function removeTarget(t) {
+  const { sb } = O();
   const ips = t.kind === "wallet" ? [] : [t.key];
   const wallets = t.wallets || [];
   const { error } = await sb.rpc("delete_my_target", { p_key: t.key, p_ips: ips, p_wallets: wallets });
-  if (error) { toast(errMsg(error), true); return false; }
+  if (error) return error;
   for (const w of wallets) if (w !== t.key) await sb.rpc("delete_my_target", { p_key: w, p_ips: [], p_wallets: [w] });
-  toast("Deleted from your stats");
+  return null;
+}
+// Delete every target in the cleanup list, after one confirm
+async function deleteAll(list, btn) {
+  const { confirmBox, toast, errMsg, btnBusy } = O();
+  const n = list.length;
+  if (!(await confirmBox({ title: `Delete all ${n} target${n === 1 ? "" : "s"} from your stats?`,
+    body: "Removes your visits and crypto for each of them. Their IPs and wallets stay in Lookup. Older log lines for them won't be counted again.",
+    ok: `Delete ${n}`, danger: true }))) return false;
+  btnBusy(btn, true, "Deleting…");
+  let done = 0, failed = 0, lastErr = null;
+  for (const { t } of list) {
+    const err = await removeTarget(t);
+    if (err) { failed++; lastErr = err; } else done++;
+    btn.textContent = `Deleting ${done + failed}/${n}…`;
+  }
+  if (failed) toast(`Deleted ${done}, ${failed} failed: ${errMsg(lastErr)}`, true);
+  else toast(`Deleted ${done} from your stats`);
   return true;
 }
 
@@ -550,7 +575,8 @@ PAGES.crypto = async function pageCrypto(main) {
     const runClean = (n, amt) => {
       const list = cleanupList(s.targets, n, amt);
       cleanOut.innerHTML = list.length ? `
-        <div class="tiny mono muted" style="margin-bottom:4px">${list.length} TARGET${list.length === 1 ? "" : "S"} UNDER ${fmt(amt)} IN LAST ${n} VISITS</div>
+        <div class="tiny mono muted" style="margin-bottom:8px">${list.length} TARGET${list.length === 1 ? "" : "S"} UNDER ${fmt(amt)} IN LAST ${n} VISITS</div>
+        <button class="btn danger block" data-delall style="margin-bottom:8px">Delete all ${list.length}</button>
         <ul class="list">${list.map(({ t, sum }, i) => `
           <li><div class="grow">${label(t)}<div class="tiny muted">last ${n}: ${fmt(sum)} · avg ${fmt(t.avg)}</div></div>
             <button class="btn sm danger" data-del="${i}">Delete</button></li>`).join("")}</ul>`
@@ -558,6 +584,8 @@ PAGES.crypto = async function pageCrypto(main) {
           ? `<div class="empty">Every target with ${n}+ visits made at least ${fmt(amt)}.</div>`
           : `<div class="empty">No target has ${n} visits yet. Try a smaller number.</div>`;
       $$("[data-del]", cleanOut).forEach((b) => (b.onclick = async () => { if (await deleteTarget(list[Number(b.dataset.del)].t)) render(); }));
+      const all = $("[data-delall]", cleanOut);
+      if (all) all.onclick = async () => { if (await deleteAll(list, all)) render(); };
     };
     $("[data-clean]", main).onsubmit = (e) => {
       e.preventDefault();
