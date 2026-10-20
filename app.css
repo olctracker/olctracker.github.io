@@ -543,3 +543,8 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .pl-row .d { grid-column: 1 / -1; font-size: 12px; color: var(--dim); }
 .pl-row .st-ok { color: var(--accent); text-align: right; }
 .pl-row .st-bad { color: var(--danger); }
+
+/* Last Reboot */
+.rb-list .rk { flex: none; width: 24px; font: 700 12px "JetBrains Mono", monospace; color: var(--faint); }
+.rb-list .rt { text-align: right; flex: none; }
+.rb-list .rt b { font-family: "JetBrains Mono", monospace; font-size: 13.5px; }

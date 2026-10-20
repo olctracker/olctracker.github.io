@@ -155,6 +155,7 @@ const NAV = [
   { id: "siphon", label: "Siphon", icon: "siphon" },
   { id: "leads", label: "Log Leads", icon: "leads" },
   { id: "pleads", label: "Process Leads", icon: "pleads" },
+  { id: "reboot", label: "Last Reboot", icon: "reboot" },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
   { id: "review", label: "Mod Review", icon: "review", modOnly: true },

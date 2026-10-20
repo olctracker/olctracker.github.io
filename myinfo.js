@@ -104,7 +104,7 @@ function rebootDialog(d) {
   return new Promise((done) => {
     let dev = d.device_class || null, net = d.network_class || d.device_class || null;
     modal(`<h3>Reboot to R${next}?</h3>
-      <p>Closes run R${d.reboots}, resets your software and Keygen to the start and opens run R${next}. This can't be undone.</p>
+      <p>Closes run R${d.reboots}, resets your software and Keygen to the start and opens run R${next}. Your top targets from R${d.reboots} are saved to Last Reboot; your Crypto and Siphon trackers are not reset. This can't be undone.</p>
       <div class="flabel">${split ? "Device class" : "Class"} for R${next}</div>${classRow("data-dev", dev)}
       ${split ? `<div class="flabel" style="margin-top:10px">Network class</div>${classRow("data-net", net)}` : ""}
       <div class="err"></div>
