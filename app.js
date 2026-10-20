@@ -127,7 +127,11 @@ const ICON = {
   build: I('<path d="M14 6l4 4M3 21l3-1 11-11-2-2L4 18l-1 3z"/>'),
   device: I('<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>'),
   leveling: I('<path d="M4 20h4v-5H4zM10 20h4V10h-4zM16 20h4V4h-4z"/>'),
-  history: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
+  history: I('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  process: I('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h2M7 13h2M7 17h2M12 9h5M12 13h5M12 17h3"/>'),
+  myleads: I('<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>'),
+  pleads: I('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
+  reboot: I('<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.1L4 10"/>')
 };
 
 /* ---------------- routes ---------------- */
@@ -137,10 +141,12 @@ const NAV = [
   { sec: "Logs" },
   { id: "logs", label: "My Logs", icon: "log" },
   { id: "victim", label: "Victim Logs", icon: "victim" },
+  { id: "process", label: "Process List", icon: "process" },
   { sec: "My Info" },
   { id: "device", label: "My Device", icon: "device" },
   { id: "leveling", label: "Leveling Guide", icon: "leveling" },
   { id: "history", label: "Level History", icon: "history" },
+  { id: "myleads", label: "My Process Leads", icon: "myleads" },
   { sec: "Tracking" },
   { id: "crypto", label: "Crypto", icon: "crypto" },
   { id: "lookup", label: "Lookup", icon: "lookup" },
@@ -148,6 +154,7 @@ const NAV = [
   { id: "spam", label: "Spam", icon: "spam" },
   { id: "siphon", label: "Siphon", icon: "siphon" },
   { id: "leads", label: "Leads", icon: "leads" },
+  { id: "pleads", label: "Process Leads", icon: "pleads" },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
   { id: "review", label: "Mod Review", icon: "review", modOnly: true },

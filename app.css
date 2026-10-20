@@ -536,3 +536,10 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .you-line .k { flex: none; width: 58px; font: 600 10.5px "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
 .you-line .v { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 13px; }
 .you-line b { font-family: "JetBrains Mono", monospace; font-weight: 600; }
+
+/* process list preview */
+.pl-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 0; border-top: 1px solid var(--line); align-items: center; }
+.pl-row .ip { font: 600 14px "JetBrains Mono", monospace; overflow-wrap: anywhere; }
+.pl-row .d { grid-column: 1 / -1; font-size: 12px; color: var(--dim); }
+.pl-row .st-ok { color: var(--accent); text-align: right; }
+.pl-row .st-bad { color: var(--danger); }
