@@ -153,7 +153,7 @@ const NAV = [
   { id: "software", label: "Software", icon: "software" },
   { id: "spam", label: "Spam", icon: "spam" },
   { id: "siphon", label: "Siphon", icon: "siphon" },
-  { id: "leads", label: "Leads", icon: "leads" },
+  { id: "leads", label: "Log Leads", icon: "leads" },
   { id: "pleads", label: "Process Leads", icon: "pleads" },
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
@@ -166,7 +166,7 @@ const NAV = [
 
 const SOON_TEXT = {
   logs: ["Paste your own log", "Records visits, thefts, and who hit you", "Pairs IPs with wallet IDs automatically"],
-  victim: ["Paste a victim's log", "Finds their targets and attackers", "Feeds the shared Leads list"],
+  victim: ["Paste a victim's log", "Finds their targets and attackers", "Feeds the shared Log Leads list"],
   crypto: ["Today, this week, all time", "Your top 25 targets by total or average", "Cleanup checker for weak targets", "Proxied bucket and crypto stolen from you"],
   lookup: ["Search any wallet ID or IP", "Current and previous 5 IPs", "Flag scrambled or incorrect"],
   software: ["Paste or keypad entry for 10 programs", "Search a program at a level", "Search All at a level, best matches first"],
@@ -680,6 +680,15 @@ async function pageMod(main) {
       </div>
     </div>
 
+    ${isAdmin() ? `<div class="card">
+      <div class="card-h">Log Leads<span class="r">Admin only</span></div>
+      <p class="small muted" style="margin-top:0">A visited IP goes back into a member's Log Leads and Process Leads when, after their last visit, it hacks someone in a pasted log, or a crewmate's own log shows a steal of at least this amount. One amount for everyone; members never see it.</p>
+      <form id="leadAmtForm" class="row" style="gap:8px">
+        <input class="input mono grow" name="amt" inputmode="numeric" pattern="[0-9,]*" maxlength="15" autocomplete="off" placeholder="Loading…">
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+    </div>` : ""}
+
     <div class="card">
       <div class="card-h">Poll</div>
       ${poll ? `
@@ -789,6 +798,22 @@ async function pageMod(main) {
   }));
 
   // home screen
+  if ($("#leadAmtForm")) {
+    const f = $("#leadAmtForm");
+    sb.rpc("get_lead_return_amount").then(({ data, error }) => {
+      f.amt.placeholder = error ? "Run the v1.14 SQL file" : "e.g. 1,000";
+      if (!error && data != null) f.amt.value = Number(data).toLocaleString("en-US");
+    });
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = f.amt.value.replace(/[,\s]/g, "");
+      if (!/^\d{1,9}$/.test(v) || Number(v) < 1) return toast("Enter an amount, like 1,000", true);
+      const { error } = await sb.rpc("set_lead_return_amount", { p_amount: Number(v) });
+      if (error) return toast(errMsg(error), true);
+      f.amt.value = Number(v).toLocaleString("en-US"); f.amt.blur();
+      toast("Return amount saved");
+    };
+  }
   $("#homeForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target, btn = $("button", f);

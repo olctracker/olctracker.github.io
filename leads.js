@@ -1,6 +1,6 @@
 /* =========================================================
-   OLC Database — stage 6 + 7: Leads and Server Top 25
-   Leads: IPs found in victim logs the crew pasted, minus every
+   OLC Database — stage 6 + 7: Log Leads and Server Top 25
+   Log Leads: IPs found in victim logs the crew pasted, minus every
    target already in your own Crypto tracker. No amounts.
    Server Top 25 (Admin only): best crypto targets and siphon
    entries across all members.
@@ -39,7 +39,7 @@ PAGES.leads = async function pageLeads(main) {
 
   main.innerHTML = `
     <div class="tiles">
-      <div class="tile big"><div class="k">Leads for you</div><div class="v gain">${fmt(all.length)}</div>
+      <div class="tile big"><div class="k">Log leads for you</div><div class="v gain">${fmt(all.length)}</div>
         <div class="s">From victim logs the crew pasted. IPs in your Crypto tracker are left out.</div></div>
     </div>
     <div class="searchbar">${G().IC.search}<input class="input" type="search" placeholder="Filter by IP or wallet ID" autocomplete="off" autocapitalize="none" spellcheck="false" value="${esc(q)}"></div>

@@ -2,7 +2,7 @@
    OLC Database — Victim Logs
    Reads a pasted log with the same reader as My Logs.
    - Every full IP in it (the victim's targets and attackers) is
-     saved to the shared Leads list.
+     saved to the shared Log Leads list.
    - Wallet ID ↔ IP pairs are linked in Lookup.
    No crypto amounts are saved.
    ========================================================= */
@@ -25,9 +25,10 @@ function walletPairs(read) {
 
 // One lead event per log line that names a full IP (no amounts)
 function leadEvents(read) {
-  return [...read.visits, ...(read.crackVisits || []), ...read.attacks]
+  const tag = (kind) => (e) => ({ ...e, kind });
+  return [...read.visits.map(tag("visit")), ...(read.crackVisits || []).map(tag("visit")), ...read.attacks.map(tag("attack"))]
     .filter((e) => fullIp(e.ip))
-    .map((e) => ({ hash: "vic:" + e.hash, ip: e.ip, wallet: e.wallet || null, at: e.at.toISOString() }));
+    .map((e) => ({ hash: "vic:" + e.hash, ip: e.ip, wallet: e.wallet || null, at: e.at.toISOString(), kind: e.kind }));
 }
 
 // The IPs in a paste, with how often each shows up and when last
@@ -67,7 +68,7 @@ PAGES.victim = async function pageVictim(main) {
   main.innerHTML = `
     <div class="card">
       <div class="card-h">Victim log</div>
-      <p class="small muted" style="margin-top:0">Paste a log you viewed on another device. IPs go to <a href="#/leads">Leads</a>, wallet IDs are linked in Lookup and downloaded software levels are saved to those IPs. Crypto amounts are ignored.</p>
+      <p class="small muted" style="margin-top:0">Paste a log you viewed on another device. IPs go to <a href="#/leads">Log Leads</a>, wallet IDs are linked in Lookup and downloaded software levels are saved to those IPs. Crypto amounts are ignored.</p>
       <textarea class="input mono log-box" rows="8" placeholder="Paste the log here"></textarea>
       <div data-prev></div>
       <div class="row" style="gap:8px;margin-top:12px">
@@ -130,11 +131,11 @@ PAGES.victim = async function pageVictim(main) {
     btnBusy(save, false);
     const ipCount = leadIps(events).length;
     const parts = [];
-    if (ipCount) parts.push(leadErr ? null : `${ipCount} IP${ipCount === 1 ? "" : "s"} in Leads${added ? "" : " (already saved)"}`);
+    if (ipCount) parts.push(leadErr ? null : `${ipCount} IP${ipCount === 1 ? "" : "s"} in Log Leads${added ? "" : " (already saved)"}`);
     if (pairs.length) parts.push(`linked ${linked} wallet ID${linked === 1 ? "" : "s"}`);
     if (swN) parts.push(`${swN} IP${swN === 1 ? "" : "s"} software updated`);
     toast(parts.filter(Boolean).join(" · ") || "Saved");
-    if (leadErr) toast(`Leads not saved: ${errMsg(leadErr)}`, true);
+    if (leadErr) toast(`Log Leads not saved: ${errMsg(leadErr)}`, true);
     ta.value = ""; show();
   };
 };

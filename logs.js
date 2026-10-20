@@ -273,7 +273,7 @@ async function saveParsed(p) {
       continue;
     }
     newL.push({ user_id: uid, attacker_ip: a.ip, wallet: a.wallet, amount: a.amount, at: a.at.toISOString(), hash: a.hash });
-    if (a.ip && !fullyHidden(a.ip)) leadEvents.push({ hash: `me:${uid}:${a.hash}`, ip: a.ip, wallet: a.wallet, at: a.at.toISOString() });
+    if (a.ip && !fullyHidden(a.ip)) leadEvents.push({ hash: `me:${uid}:${a.hash}`, ip: a.ip, wallet: a.wallet, at: a.at.toISOString(), kind: "attack" });
   }
   for (const c of chunks(newL, 500)) {
     const { error } = await sb.from("losses").upsert(c, { onConflict: "user_id,hash", ignoreDuplicates: true });
