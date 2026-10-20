@@ -431,7 +431,7 @@ async function deleteTarget(t) {
   const { sb, confirmBox, toast, errMsg } = O();
   const name = t.key;
   if (!(await confirmBox({ title: `Delete ${name} from your stats?`,
-    body: "Removes your visits and crypto for this target. Its IP and wallet stay in Lookup. Older log lines for it won't be counted again.",
+    body: "Removes your visits and crypto for this target. Its IP and wallet stay in Lookup, and it stays out of your leads. Older log lines for it won't be counted again.",
     ok: "Delete", danger: true }))) return false;
   const error = await removeTarget(t);
   if (error) { toast(errMsg(error), true); return false; }
@@ -453,7 +453,7 @@ async function deleteAll(list, btn) {
   const { confirmBox, toast, errMsg, btnBusy } = O();
   const n = list.length;
   if (!(await confirmBox({ title: `Delete all ${n} target${n === 1 ? "" : "s"} from your stats?`,
-    body: "Removes your visits and crypto for each of them. Their IPs and wallets stay in Lookup. Older log lines for them won't be counted again.",
+    body: "Removes your visits and crypto for each of them. Their IPs and wallets stay in Lookup, and they stay out of your leads. Older log lines for them won't be counted again.",
     ok: `Delete ${n}`, danger: true }))) return false;
   btnBusy(btn, true, "Deleting…");
   let done = 0, failed = 0, lastErr = null;
