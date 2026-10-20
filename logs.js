@@ -579,11 +579,13 @@ PAGES.crypto = async function pageCrypto(main) {
         <button class="btn danger block" data-delall style="margin-bottom:8px">Delete all ${list.length}</button>
         <ul class="list">${list.map(({ t, sum }, i) => `
           <li><div class="grow">${label(t)}<div class="tiny muted">last ${n}: ${fmt(sum)} · avg ${fmt(t.avg)}</div></div>
+            <button class="icon-btn" data-ccopy="${i}" aria-label="Copy ${t.kind === "wallet" ? "wallet ID" : "IP"}">${G().IC.copy}</button>
             <button class="btn sm danger" data-del="${i}">Delete</button></li>`).join("")}</ul>`
         : s.targets.some((t) => t.all.length >= n)
           ? `<div class="empty">Every target with ${n}+ visits made at least ${fmt(amt)}.</div>`
           : `<div class="empty">No target has ${n} visits yet. Try a smaller number.</div>`;
       $$("[data-del]", cleanOut).forEach((b) => (b.onclick = async () => { if (await deleteTarget(list[Number(b.dataset.del)].t)) render(); }));
+      $$("[data-ccopy]", cleanOut).forEach((b) => (b.onclick = () => G().copy(list[Number(b.dataset.ccopy)].t.key)));
       const all = $("[data-delall]", cleanOut);
       if (all) all.onclick = async () => { if (await deleteAll(list, all)) render(); };
     };
