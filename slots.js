@@ -72,6 +72,7 @@ function askMissing(ips) {
         <button class="chip" data-all="mine">All: I removed</button>
         <button class="chip" data-all="target">All: target removed</button>
         <button class="chip on" data-all="keep">All: still there</button>
+        <button class="chip" data-all="proxy">All: proxied</button>
       </div>
       <ul class="list miss-list">${ips.map((ip) => `
         <li><span class="mono grow">${esc(ip)}</span>
@@ -79,8 +80,9 @@ function askMissing(ips) {
             <option value="keep">Still there</option>
             <option value="mine">I removed it</option>
             <option value="target">Target removed it</option>
+            <option value="proxy">Proxied → move to box</option>
           </select></li>`).join("")}</ul>
-      <div class="hint">"Target removed it" sends the IP to Mods to check if the player is active again.</div>
+      <div class="hint">"Target removed it" sends the IP to Mods to check if the player is active again. "Proxied" moves it to your Proxied box: its spam is the xxx slot now, so it's only counted once.</div>
       <div class="btns" style="margin-top:12px"><button class="btn" data-no>Cancel</button><button class="btn primary" data-yes>Save</button></div>`,
     (w, close) => {
       const sync = () => $$("[data-ip]", w).forEach((s) => (s.value = choice[s.dataset.ip]));
@@ -96,24 +98,35 @@ function askMissing(ips) {
 }
 
 /* ---------- saving a pasted spam list ---------- */
-async function saveSpam(list, previous) {
+async function saveSpam(list, previous, box = new Set()) {
   const { sb, S, isMod } = O();
   const uid = S.profile.id;
   const now = new Date().toISOString();
   const newIps = new Set(list.map((x) => x.ip));
   // proxied slots can't be matched between pastes: this paste replaces them all
   const oldHidden = previous.filter((p) => isHiddenSlot(p.ip) && !newIps.has(p.ip)).map((p) => p.ip);
-  const missing = previous.filter((p) => !isHiddenSlot(p.ip) && !newIps.has(p.ip)).map((p) => p.ip);
+  const gone = previous.filter((p) => !isHiddenSlot(p.ip) && !newIps.has(p.ip)).map((p) => p.ip);
+  // IPs already in my Proxied box: their spam is an xxx slot now, so drop the old row without asking
+  const boxed = gone.filter((ip) => box.has(ip));
+  const missing = gone.filter((ip) => !box.has(ip));
   let decisions = {};
   if (missing.length) {
     decisions = await askMissing(missing);
     if (!decisions) return null;             // cancelled
   }
-  const res = { saved: list.length, removed: 0, reported: 0, kept: 0, high: 0, hidden: list.filter((x) => isHiddenSlot(x.ip)).length };
+  const res = { saved: list.length, removed: 0, reported: 0, kept: 0, high: 0, boxed: 0, hidden: list.filter((x) => isHiddenSlot(x.ip)).length };
   if (oldHidden.length) await sb.from("spam_slots").delete().eq("user_id", uid).in("ip", oldHidden);
+  if (boxed.length) await sb.from("spam_slots").delete().eq("user_id", uid).in("ip", boxed);
   for (const ip of missing) {
     const d = decisions[ip];
     if (d === "keep") { res.kept++; continue; }
+    if (d === "proxy") {
+      const { error } = await sb.from("spam_proxy_box").upsert({ user_id: uid, ip }, { onConflict: "user_id,ip" });
+      if (error) { res.boxErr = error.message || "error"; res.kept++; continue; }   // keep the slot if the box isn't ready
+      await sb.from("spam_slots").delete().eq("user_id", uid).eq("ip", ip);
+      res.boxed++;
+      continue;
+    }
     await sb.from("spam_slots").delete().eq("user_id", uid).eq("ip", ip);
     res.removed++;
     if (d === "target") { await sb.rpc("report_spam_removed", { p_ip: ip }); res.reported++; }
@@ -155,11 +168,26 @@ async function loadSuggestions(mine) {
 async function mountSpamSlots(box) {
   const { sb, S, esc, $, $$, toast, errMsg, confirmBox } = O();
   const uid = S.profile.id;
-  const { data: slots } = await sb.from("spam_slots").select("*").eq("user_id", uid);
+  const [{ data: slots }, boxR] = await Promise.all([
+    sb.from("spam_slots").select("*").eq("user_id", uid),
+    sb.from("spam_proxy_box").select("ip,added_at").eq("user_id", uid).order("added_at", { ascending: false })
+  ]);
+  const boxReady = !boxR.error;
+  const boxList = boxR.data || [];
+  const pbox = new Set(boxList.map((x) => x.ip));
   const mine = (slots || []).sort((a, b) => (b.per_hour || 0) - (a.per_hour || 0));
   const open = MAX_SLOTS - mine.length;
   const perHour = mine.reduce((s, x) => s + (x.per_hour || 0), 0);
-  const sugg = open > 0 ? await loadSuggestions(new Set(mine.map((x) => x.ip))) : [];
+  const sugg = open > 0 ? await loadSuggestions(new Set([...mine.map((x) => x.ip), ...pbox])) : [];
+  // firewall for my slots and box IPs, from saved IPs
+  const fw = {};
+  const fwIps = [...new Set([...mine.map((x) => x.ip).filter((ip) => !isHiddenSlot(ip)), ...pbox])];
+  for (let i = 0; i < fwIps.length; i += 150) {
+    const { data: t } = await sb.from("targets").select("ip,firewall").in("ip", fwIps.slice(i, i + 150));
+    (t || []).forEach((x) => (fw[x.ip] = x.firewall));
+  }
+  let slotsOpen = false;
+  try { slotsOpen = sessionStorage.getItem("olc-slots-open") === "1"; } catch (e) {}
 
   box.innerHTML = `
     <div class="card">
@@ -178,18 +206,37 @@ async function mountSpamSlots(box) {
         <li><div class="fw-pill mono"><small>FW</small>${t.firewall ?? "—"}</div>
           <div class="grow"><a class="mono ip-row" href="#/ip/${encodeURIComponent(t.ip)}">${esc(t.ip)}</a><div class="tiny muted">LV ${t.player_level ?? "—"}</div></div>
           <button class="icon-btn" data-copy="${esc(t.ip)}" aria-label="Copy">${G().IC.copy}</button>
+          ${boxReady ? `<button class="btn sm" data-px="${esc(t.ip)}">Proxied</button>` : ""}
           <button class="btn sm" data-flag="${esc(t.ip)}">Flag</button></li>`).join("")}</ul>`
         : `<div class="empty">No suggestions. Add inactive IPs (level 25+) to the list below.</div>`}
     </div>` : ""}
 
     ${mine.length ? `<div class="card">
-      <div class="card-h">Current slots</div>
-      <ul class="list">${mine.map((x) => `
-        <li><div class="grow"><span class="mono ip-row">${esc(slotLabel(x.ip))}</span>${isHiddenSlot(x.ip) ? ` <span class="badge">proxied</span>` : ""}
+      <details class="fold" data-slotfold ${slotsOpen ? "open" : ""}><summary>Current slots <span class="tiny mono muted">· ${mine.length} · tap to ${slotsOpen ? "hide" : "show"}</span></summary>
+      <ul class="list" style="margin-top:8px">${mine.map((x) => `
+        <li>${isHiddenSlot(x.ip) ? `<div class="fw-pill mono unknown"><small>FW</small>?</div>` : `<div class="fw-pill mono"><small>FW</small>${fw[x.ip] ?? "—"}</div>`}
+          <div class="grow"><span class="mono ip-row">${esc(slotLabel(x.ip))}</span>${isHiddenSlot(x.ip) ? ` <span class="badge">proxied</span>` : ""}
           <div class="tiny muted">LV ${x.level ?? "—"} · ${fmt(x.earned)} earned · ${esc(x.age || "—")}</div></div>
           <b class="mono ${(x.per_hour || 0) >= HIGH_RATE ? "gain" : ""}">${fmt(x.per_hour)}/hr</b></li>`).join("")}</ul>
       <button class="btn danger block" data-reboot style="margin-top:12px">Reset spam slots</button>
-    </div>` : ""}`;
+      </details>
+    </div>` : ""}
+
+    <div class="card">
+      <div class="card-h">Proxied box<span class="r">${pbox.size} IP${pbox.size === 1 ? "" : "s"}</span></div>
+      ${boxReady ? `
+      <p class="small muted" style="margin-top:0">IPs you've spammed that are behind a proxy. They're never suggested and never asked about as missing. Not added to your slot count: their spam is already one of your xxx slots.</p>
+      ${boxList.length ? `<ul class="list">${boxList.map((x) => `
+        <li><div class="fw-pill mono"><small>FW</small>${fw[x.ip] ?? "—"}</div>
+          <div class="grow"><a class="mono ip-row" href="#/ip/${encodeURIComponent(x.ip)}">${esc(x.ip)}</a></div>
+          <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy">${G().IC.copy}</button>
+          <button class="btn sm danger" data-unbox="${esc(x.ip)}">Remove</button></li>`).join("")}</ul>`
+        : `<div class="empty">Empty. Tap <b>Proxied</b> on a suggestion to add it here.</div>`}
+      <form class="row" data-boxadd style="gap:8px;margin-top:10px">
+        <input class="input mono grow" name="ip" inputmode="decimal" autocomplete="off" placeholder="Add an IP, e.g. 12.54.78.9">
+        <button class="btn primary" type="submit">Add</button></form>`
+      : `<p class="small muted" style="margin:0">Needs the latest database update (ask the Admin).</p>`}
+    </div>`;
 
   const ta = $("textarea", box), prev = $("[data-prev]", box), save = $("[data-save]", box);
   let parsed = [];
@@ -197,7 +244,7 @@ async function mountSpamSlots(box) {
     parsed = readSlotList(ta.value);
     save.disabled = !parsed.length;
     const high = parsed.filter((x) => (x.per_hour || 0) >= HIGH_RATE).length;
-    const gone = mine.filter((m) => !isHiddenSlot(m.ip) && !parsed.some((p) => p.ip === m.ip)).length;
+    const gone = mine.filter((m) => !isHiddenSlot(m.ip) && !pbox.has(m.ip) && !parsed.some((p) => p.ip === m.ip)).length;
     const hid = parsed.filter((x) => isHiddenSlot(x.ip)).length;
     prev.innerHTML = !ta.value.trim() ? "" : `<div class="tiny mono muted" style="margin-top:8px">
       FOUND ${parsed.length} SLOT${parsed.length === 1 ? "" : "S"}${hid ? ` · ${hid} PROXIED` : ""}${high ? ` · ${high} AT ${HIGH_RATE}/HR` : ""}${gone && parsed.length ? ` · ${gone} MISSING FROM LAST TIME` : ""}${parsed.length > MAX_SLOTS ? ` · MORE THAN ${MAX_SLOTS}?` : ""}</div>`;
@@ -205,15 +252,40 @@ async function mountSpamSlots(box) {
   save.onclick = async () => {
     O().btnBusy(save, true, "Saving…");
     try {
-      const r = await saveSpam(parsed, mine);
+      const r = await saveSpam(parsed, mine, pbox);
       if (!r) { O().btnBusy(save, false); return; }
       if (r.hiddenErr) toast(`Proxied slots not saved: ${r.hiddenErr}`, true);
-      toast(`Saved ${r.saved} slots${r.hidden ? ` (${r.hidden} proxied)` : ""}${r.removed ? ` · ${r.removed} removed` : ""}${r.reported ? (r.modActive ? ` · ${r.reported} set Active` : ` · ${r.reported} sent to Mods`) : ""}${r.high ? ` · ${r.high} at ${HIGH_RATE}/hr reported` : ""}`);
+      if (r.boxErr) toast(`Proxied box not ready: ${r.boxErr}`, true);
+      toast(`Saved ${r.saved} slots${r.hidden ? ` (${r.hidden} proxied)` : ""}${r.boxed ? ` · ${r.boxed} moved to Proxied box` : ""}${r.removed ? ` · ${r.removed} removed` : ""}${r.reported ? (r.modActive ? ` · ${r.reported} set Active` : ` · ${r.reported} sent to Mods`) : ""}${r.high ? ` · ${r.high} at ${HIGH_RATE}/hr reported` : ""}`);
       mountSpamSlots(box);
     } catch (e) { toast(errMsg(e), true); O().btnBusy(save, false); }
   };
   $$("[data-copy]", box).forEach((b) => (b.onclick = () => G().copy(b.dataset.copy)));
   $$("[data-flag]", box).forEach((b) => (b.onclick = () => flagSuggestion(b.dataset.flag, () => mountSpamSlots(box))));
+  const fold = $("[data-slotfold]", box);
+  if (fold) fold.addEventListener("toggle", () => {
+    try { sessionStorage.setItem("olc-slots-open", fold.open ? "1" : "0"); } catch (e) {}
+    const hint = $("summary .tiny", fold);
+    if (hint) hint.textContent = `· ${mine.length} · tap to ${fold.open ? "hide" : "show"}`;
+  });
+  const addToBox = async (ip) => {
+    ip = G().tidyIp(ip);
+    if (!G().isFullIp(ip)) { toast("Enter a full IP like 123.45.67.89", true); return; }
+    const { error } = await sb.from("spam_proxy_box").upsert({ user_id: uid, ip }, { onConflict: "user_id,ip" });
+    if (error) { toast(errMsg(error), true); return; }
+    toast(`${ip} moved to Proxied box`);
+    mountSpamSlots(box);
+  };
+  $$("[data-px]", box).forEach((b) => (b.onclick = () => addToBox(b.dataset.px)));
+  $$("[data-unbox]", box).forEach((b) => (b.onclick = async () => {
+    const ip = b.dataset.unbox;
+    if (!(await confirmBox({ title: `Remove ${ip} from your Proxied box?`, body: "It can show up in Suggestions again.", ok: "Remove", danger: true }))) return;
+    const { error } = await sb.from("spam_proxy_box").delete().eq("user_id", uid).eq("ip", ip);
+    if (error) return toast(errMsg(error), true);
+    toast("Removed"); mountSpamSlots(box);
+  }));
+  const bf = $("[data-boxadd]", box);
+  if (bf) bf.onsubmit = (e) => { e.preventDefault(); addToBox(bf.ip.value); };
   $("[data-reboot]", box) && ($("[data-reboot]", box).onclick = async () => {
     if (!(await confirmBox({ title: "Reset your spam slots?", body: "Clears your saved spam list only. Siphon and crypto are untouched.", ok: "Reset", danger: true }))) return;
     const { error } = await sb.rpc("reboot", { p_category: "spam" });

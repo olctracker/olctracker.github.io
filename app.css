@@ -548,3 +548,4 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .rb-list .rk { flex: none; width: 24px; font: 700 12px "JetBrains Mono", monospace; color: var(--faint); }
 .rb-list .rt { text-align: right; flex: none; }
 .rb-list .rt b { font-family: "JetBrains Mono", monospace; font-size: 13.5px; }
+.fw-pill.unknown { background: var(--bg-2); color: var(--faint); }
