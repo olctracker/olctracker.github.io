@@ -345,6 +345,7 @@ async function enter() {
   if (!S.profile.approved) { renderPending(); return; }
   await loadSettings();
   buildShell();
+  applyHomeIcon();
   render();
 }
 
@@ -570,6 +571,27 @@ async function pageSettings(main) {
     </div>
 
     <div class="card">
+      <div class="card-h">Home screen icon<span class="r">iPhone only</span></div>
+      <div class="ic-note">${ios ? "Pick the icon your iPhone shows, then add the app to your Home Screen again." : "iPhone only. Android uses the crew's phone icon, set by the Mods."}</div>
+      <div class="ic-opts">
+        ${[["logo", logo(), "Copy the app's logo", "Whatever logo the app shows now"],
+           ["custom", S.profile.home_icon === "custom" && S.profile.home_icon_at ? myHomeIcon() : "", "Upload your own", "Square PNG or JPG, at least 180×180 (512×512 is best). Cropped to a square."],
+           ["", phoneIcon(180), "Default", "The crew's phone icon"]].map(([k, img, t, d]) => `
+          <button class="ic-opt ${(S.profile.home_icon || "") === k ? "on" : ""}" data-hicon="${k}">
+            ${img ? `<img src="${esc(img)}" alt="">` : `<span class="ph">＋</span>`}
+            <span class="grow"><b>${t}</b><span>${d}</span></span>${(S.profile.home_icon || "") === k ? `<span class="chk">${ICON.check}</span>` : ""}</button>`).join("")}
+      </div>
+      <input type="file" accept="image/*" id="homeIconFile" hidden>
+      <hr class="sep">
+      <div class="small"><b>To use it on iPhone:</b>
+        <ol style="margin:6px 0 0;padding-left:20px;line-height:1.8">
+          <li>Remove ${esc(S.settings.app_name)} from your Home Screen (press and hold → Remove App).</li>
+          <li>Open this site in <b>Safari</b> and log in.</li>
+          <li>Tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>.</li></ol></div>
+      <div class="hint">Your phone keeps the icon it had when you added the app.</div>
+    </div>
+
+    <div class="card">
       <div class="card-h">Change PIN</div>
       <form id="pinForm">
         <label class="f"><span>Current PIN</span><input class="input pin" name="o" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="current-password" placeholder="••••"></label>
@@ -589,6 +611,28 @@ async function pageSettings(main) {
     S.profile.theme = b.dataset.themeId;
     await sb.rpc("set_theme", { p_theme: b.dataset.themeId });
   }));
+  const setHome = async (choice) => {
+    const { error } = await sb.rpc("set_home_icon", { p_choice: choice || null });
+    if (error) return toast(/function|schema/i.test(errMsg(error)) ? "Needs the latest database update (ask the Admin)" : errMsg(error), true);
+    await loadProfile(); applyHomeIcon(); toast("Home screen icon saved. Re-add the app to see it."); render();
+  };
+  $$("[data-hicon]").forEach((b) => (b.onclick = () => {
+    if (b.dataset.hicon === "custom") $("#homeIconFile").click();
+    else setHome(b.dataset.hicon);
+  }));
+  $("#homeIconFile").onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      toast("Uploading…");
+      const img = await imgFrom(f);
+      if (Math.min(img.naturalWidth, img.naturalHeight) < 180) throw new Error("Image is too small (at least 180×180)");
+      const blob = await iconBlob(img, 512);
+      const { error } = await sb.storage.from("home-icons").upload(S.profile.id + ".png", blob, { upsert: true, contentType: "image/png", cacheControl: "60" });
+      if (error) throw error;
+      await setHome("custom");
+    } catch (err) { toast(/bucket|policy|row-level/i.test(errMsg(err)) ? "Needs the latest database update (ask the Admin)" : errMsg(err), true); }
+  };
   $("#installBtn") && ($("#installBtn").onclick = async () => {
     if (!S.installPrompt) return;
     S.installPrompt.prompt();
@@ -678,6 +722,17 @@ async function pageMod(main) {
           </div>
         </div>
         <div class="hint">Cropped to a square. Changes the logo inside the app for everyone.</div>
+      </div>
+      <hr class="sep">
+      <div class="f"><span class="tiny mono muted" style="letter-spacing:.1em;text-transform:uppercase;font-weight:600">Phone icon</span>
+        <div class="row" style="margin-top:8px">
+          <img id="phonePrev" src="${esc(phoneIcon(192))}" alt="" style="width:64px;height:64px;border-radius:14px;border:1px solid var(--line-2);object-fit:cover">
+          <div class="grow row wrap" style="gap:8px">
+            <label class="btn sm primary">Upload phone icon<input type="file" accept="image/*" id="phoneFile" hidden></label>
+            <button type="button" class="btn sm ghost" id="phoneFromLogo">Use app logo</button>
+          </div>
+        </div>
+        <div class="hint">The home screen icon. Square, at least 512×512 is best; phones round the corners. It's the default for everyone: Android phones update on their own (usually within a day), iPhones when the app is added again.${S.settings.phone_icon_at ? ` Last changed ${fmtDateTime(S.settings.phone_icon_at)}.` : ""}</div>
       </div>
     </div>
 
@@ -841,6 +896,18 @@ async function pageMod(main) {
       await loadSettings(); refreshLogos(); toast("Logo updated"); render();
     } catch (err) { toast(errMsg(err), true); }
   };
+  const phoneUp = async (source) => {
+    try {
+      toast("Making phone icons…");
+      await uploadPhoneIcon(source);
+      await loadSettings(); applyHomeIcon(); toast("Phone icon updated"); render();
+    } catch (err) { toast(/column|schema|policy|row-level/i.test(errMsg(err)) ? "Needs the latest database update (v1.18 SQL)" : errMsg(err), true); }
+  };
+  $("#phoneFile").onchange = (e) => { const f = e.target.files[0]; if (f) phoneUp(f); };
+  $("#phoneFromLogo").onclick = async () => {
+    if (!(await confirmBox({ title: "Use the app logo as the phone icon?", body: "Changes the home screen icon for everyone.", ok: "Use logo" }))) return;
+    phoneUp(logo());
+  };
   $("#logoReset") && ($("#logoReset").onclick = async () => {
     if (!(await confirmBox({ title: "Go back to the lizard logo?", ok: "Use lizard" }))) return;
     const { error } = await sb.from("app_settings").update({ logo_url: null }).eq("id", 1);
@@ -973,6 +1040,70 @@ function squareImage(file, size) {
   });
 }
 function refreshLogos() { $$(".topbar-logo, .drawer-head img").forEach((i) => (i.src = logo())); }
+
+/* ---------- phone icons ----------
+   Phone icon (Mods): branding/phone-*.png, the default home screen icon.
+   iPhone members can pick their own in Settings (the app logo, or home-icons/<id>.png).
+   iPhones take the icon from the page when "Add to Home Screen" is tapped. */
+const PHONE_FILES = { 512: "phone-512.png", 192: "phone-192.png", 180: "phone-180.png", mask: "phone-maskable.png" };
+const storeUrl = (bucket, file, v) => `${CFG.supabaseUrl}/storage/v1/object/public/${bucket}/${file}${v ? "?v=" + new Date(v).getTime() : ""}`;
+const phoneIcon = (size = 180) => S.settings.phone_icon_at
+  ? storeUrl("branding", PHONE_FILES[size], S.settings.phone_icon_at)
+  : (size === 180 ? "apple-touch-icon-v2.png" : `icon-${size}-v2.png`);
+function myHomeIcon() {
+  const c = S.profile?.home_icon;
+  if (c === "logo") return logo();
+  if (c === "custom" && S.profile.home_icon_at) return storeUrl("home-icons", S.profile.id + ".png", S.profile.home_icon_at);
+  return phoneIcon(180);
+}
+function applyHomeIcon() {
+  let l = document.querySelector('link[rel="apple-touch-icon"]');
+  if (!l) { l = document.createElement("link"); l.rel = "apple-touch-icon"; document.head.appendChild(l); }
+  l.href = myHomeIcon();
+}
+function loadImg(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Couldn't read that image"));
+    img.src = src;
+  });
+}
+// square crop -> PNG; pad (0..1) shrinks it inside a black square (Android round icons)
+function iconBlob(img, size, pad = 0) {
+  return new Promise((resolve, reject) => {
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const g = c.getContext("2d");
+    g.fillStyle = "#000"; g.fillRect(0, 0, size, size);
+    const inner = Math.round(size * (1 - pad)), off = Math.round((size - inner) / 2);
+    g.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, off, off, inner, inner);
+    c.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't read that image"))), "image/png");
+  });
+}
+async function imgFrom(fileOrUrl) {
+  if (typeof fileOrUrl === "string") {
+    const res = await fetch(fileOrUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error("Couldn't load the app logo");
+    fileOrUrl = await res.blob();
+  }
+  const url = URL.createObjectURL(fileOrUrl);
+  try { return await loadImg(url); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+}
+async function uploadPhoneIcon(source) {
+  const img = await imgFrom(source);
+  if (Math.min(img.naturalWidth, img.naturalHeight) < 180) throw new Error("Image is too small (at least 180×180)");
+  const files = [[PHONE_FILES[512], await iconBlob(img, 512)], [PHONE_FILES[192], await iconBlob(img, 192)],
+    [PHONE_FILES[180], await iconBlob(img, 180)], [PHONE_FILES.mask, await iconBlob(img, 512, 0.16)]];
+  for (const [name, blob] of files) {
+    const { error } = await sb.storage.from("branding").upload(name, blob, { upsert: true, contentType: "image/png", cacheControl: "300" });
+    if (error) throw error;
+  }
+  const { error } = await sb.from("app_settings").update({ phone_icon_at: new Date().toISOString() }).eq("id", 1);
+  if (error) throw error;
+}
 
 /* =========================================================
    COMING SOON
