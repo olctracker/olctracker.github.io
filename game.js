@@ -555,10 +555,12 @@ function targetRow(t, extra = "") {
   return `<li class="tap" data-goto="${esc(t.ip)}">
     <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
       ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}${t.reputation != null ? ` · REP ${fmtRep(t.reputation)}` : ""}</div>${extra}</div>
-    <div class="row-badges">${badges(t)}</div>${IC.chev}</li>`;
+    <div class="row-badges">${badges(t)}</div>
+    <button class="icon-btn row-copy" data-rowcopy="${esc(t.ip)}" aria-label="Copy IP">${IC.copy}</button>${IC.chev}</li>`;
 }
 function bindRows(root) {
   O().$$("[data-goto]", root).forEach((li) => (li.onclick = () => O().go("ip/" + encodeURIComponent(li.dataset.goto))));
+  O().$$("[data-rowcopy]", root).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); copy(b.dataset.rowcopy); }));
 }
 
 /* =========================================================
