@@ -596,3 +596,8 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .lvl-h.muted { color: var(--faint); }
 .banner { border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
 .statline { font-size: 12.5px; color: var(--dim); margin: -4px 4px 12px; }
+.ip-grp { display: flex; align-items: center; gap: 10px; padding: 10px 0 4px; border-top: 1px solid var(--line-2); margin-top: 4px; }
+.lvl-h + .ip-grp { border-top: 0; margin-top: 0; }
+.ip-grp.done .rp-ip { opacity: .55; }
+.rp-row.sub { padding: 4px 0 4px 56px; border-top: 0; }
+.rp-row.sub .ck { width: 32px; height: 32px; }
