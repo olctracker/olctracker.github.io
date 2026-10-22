@@ -22,6 +22,8 @@ const APPS = [
   ["antivirus", "AV", 0], ["rootkit", "RK", 0], ["spam", "SP", 0], ["siphon", "SI", 0], ["proxy", "PR", 0], ["trace", "TR", 0]
 ];
 const SHORT = Object.fromEntries(APPS.map(([k, s]) => [k, s]));
+const APPNAME = { firewall: "Firewall", bypasser: "Bypasser", password_cracker: "Password Cracker", password_encryptor: "Password Encryptor",
+  antivirus: "Antivirus", rootkit: "Rootkit", spam: "Spam", siphon: "Siphon", proxy: "Proxy", trace: "Trace" };
 const ORDER = Object.fromEntries(APPS.map(([k], i) => [k, i]));
 const sk = (k, l) => `${k}:${l}`;
 
@@ -203,10 +205,30 @@ function plannerPage(kind) {
       const dlRow = (s, on) => `<div class="rp-row ${on ? "done" : ""}"><span class="app">${SHORT[s.k]}</span>
         <div class="grow">${s.ip ? `<div class="rp-ip">${esc(s.ip)}${scr(s.ip)}</div>` : `<div class="skipline">Skip · no IP has ${SHORT[s.k]} ${s.l}</div>`}</div>
         ${s.ip && !on ? copyBtn(s.ip) : ""}${ck(`data-dl="${sk(s.k, s.l)}"`, on)}</div>`;
+      const appRow = (s, on) => `<div class="rp-row sub ${on ? "done" : ""}"><span class="app">${SHORT[s.k]}</span>
+        <div class="grow rp-apps">${esc(APPNAME[s.k])} ${s.l}</div>${ck(`data-dl="${sk(s.k, s.l)}"`, on)}</div>`;
       const byLevel = (list, done) => {
         const lv = [...new Set(list.map((s) => s.l))].sort((a, b) => a - b);
-        return lv.map((l) => `<div class="lvl-h ${done ? "muted" : ""}">Level ${l}</div>${list.filter((s) => s.l === l)
-          .sort((a, b) => ORDER[a.k] - ORDER[b.k]).map((s) => dlRow(s, done)).join("")}`).join("");
+        // within a level, keep each IP's apps together: IPs with the most apps first, then lower FW; skips last
+        return lv.map((l) => {
+          const at = list.filter((s) => s.l === l);
+          const n = new Map();
+          at.forEach((s) => s.ip && n.set(s.ip, (n.get(s.ip) || 0) + 1));
+          const rank = (s) => (s.ip ? [0, -n.get(s.ip), s.fw, s.ip] : [1, 0, 0, ""]);
+          const cmp = (x, y) => { const a = rank(x), b = rank(y);
+            return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3].localeCompare(b[3]) || ORDER[x.k] - ORDER[y.k]; };
+          const rows = at.sort(cmp);
+          let html = "";
+          rows.forEach((s, i) => {
+            if (s.ip && s.ip !== (rows[i - 1] || {}).ip) {
+              html += `<div class="ip-grp ${done ? "done" : ""}"><div class="fw-pill mono"><small>FW</small>${s.fw}</div>
+                <div class="grow"><div class="rp-ip">${esc(s.ip)}${scr(s.ip)}</div><div class="rp-apps">${n.get(s.ip)} app${n.get(s.ip) === 1 ? "" : "s"}</div></div>
+                ${done ? "" : copyBtn(s.ip)}</div>`;
+            }
+            html += s.ip ? appRow(s, done) : dlRow(s, done);
+          });
+          return `<div class="lvl-h ${done ? "muted" : ""}">Level ${l}</div>${html}`;
+        }).join("");
       };
 
       const todoIps = ips.filter((x) => !bpDone.has(x.ip)), doneIps = ips.filter((x) => bpDone.has(x.ip));
