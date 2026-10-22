@@ -1114,14 +1114,22 @@ async function uploadPhoneIcon(source) {
 /* =========================================================
    COMING SOON
    ========================================================= */
+/* A page whose code didn't load (bad connection or an old saved copy) */
 function pageSoon(main, item) {
   main.innerHTML = `
     <div class="card soon-page">
       ${ICON.build}
-      <h2 style="margin:10px 0 4px">${esc(item.label)}</h2>
-      <div class="muted small">Coming in build stage ${item.soon}.</div>
-      <ul>${(SOON_TEXT[item.id] || []).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      <h2 style="margin:10px 0 4px">${esc(item.label)} didn't load</h2>
+      <div class="muted small">Part of the app didn't download, usually from a weak connection. Reload to get a fresh copy.</div>
+      <button class="btn primary block" id="reloadFresh" style="margin-top:14px">Reload</button>
+      <div class="hint">Nothing you saved is lost.</div>
     </div>`;
+  $("#reloadFresh").onclick = async () => {
+    btnBusy($("#reloadFresh"), true, "Reloading…");
+    try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (e) {}
+    try { const regs = await navigator.serviceWorker?.getRegistrations?.(); for (const r of regs || []) await r.update().catch(() => {}); } catch (e) {}
+    location.reload();
+  };
 }
 
 /* ---------- shared with page modules (game.js) ---------- */
