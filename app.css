@@ -563,3 +563,18 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .ic-opt .chk svg { width: 20px; height: 20px; }
 .list li .row-copy { flex: none; width: 38px; height: 38px; margin-left: -4px; }
 .list li .row-copy svg { width: 19px; height: 19px; }
+
+/* Software Coverage grid: programs across, levels down */
+.cov { display: grid; gap: 4px; }
+.cov-row { display: grid; grid-template-columns: 34px repeat(10, minmax(0, 1fr)); gap: 4px; align-items: center; }
+.cov-head { position: sticky; top: calc(56px + env(safe-area-inset-top)); z-index: 2; background: var(--panel); padding: 6px 0; }
+.cov-head b { font: 700 12px "JetBrains Mono", monospace; color: var(--text); text-align: center; }
+.cov-row > span { font: 600 11px "JetBrains Mono", monospace; color: var(--faint); }
+.cov-row .lv { color: var(--dim); text-align: right; padding-right: 4px; }
+.cov-foot i { font: 700 11px "JetBrains Mono", monospace; color: var(--dim); font-style: normal; text-align: center; }
+.cov-c { height: 26px; border-radius: 6px; }
+.cov-c.on { background: var(--accent); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 40%, transparent); }
+.cov-c.off { background: color-mix(in srgb, var(--danger) 70%, transparent); }
+.cov-key { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--dim); align-items: center; }
+.cov-key i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+.cov-key i.on { background: var(--accent); } .cov-key i.off { background: color-mix(in srgb, var(--danger) 75%, transparent); }

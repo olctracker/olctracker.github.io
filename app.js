@@ -131,6 +131,7 @@ const ICON = {
   process: I('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h2M7 13h2M7 17h2M12 9h5M12 13h5M12 17h3"/>'),
   myleads: I('<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>'),
   pleads: I('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
+  coverage: I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5l2 2 4-4"/>'),
   reboot: I('<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.1L4 10"/>')
 };
 
@@ -159,6 +160,7 @@ const NAV = [
   { sec: "Crew", modOnly: true },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
   { id: "review", label: "Mod Review", icon: "review", modOnly: true },
+  { id: "coverage", label: "Software Coverage", icon: "coverage", modOnly: true },
   { id: "top", label: "Server Top 25", icon: "top", adminOnly: true },
   { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
   { sec: "You" },
