@@ -3,7 +3,7 @@
 // right away), cache as backup for offline.
 // Fonts and the Supabase library: cache first.
 // Database requests are never cached.
-const CACHE = "olc-v49";
+const CACHE = "olc-v50";
 const SHELL = [
   "./", "index.html", "app.css", "app.js", "config.js", "game.js", "logs.js", "slots.js", "victim.js", "process.js", "reboot.js", "coverage.js", "planner.js", "leads.js", "import.js", "myinfo.js", "manifest.webmanifest",
   "logo.svg", "icon-192-v2.png", "icon-512-v2.png", "icon-maskable-v2.png", "apple-touch-icon-v2.png"
@@ -48,7 +48,11 @@ self.addEventListener("fetch", (e) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(req, copy));
         return res;
-      }).catch(() => caches.match(req).then((hit) => hit || caches.match("index.html")))
+      }).catch(() => caches.match(req).then((hit) => {
+        if (hit) return hit;
+        // offline: only the app itself falls back to the main page; a missing file stays missing
+        return req.mode === "navigate" ? caches.match("index.html") : Response.error();
+      }))
     );
   }
 });
