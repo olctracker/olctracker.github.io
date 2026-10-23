@@ -711,6 +711,11 @@ async function pageMod(main) {
         </li>`).join("")}</ul>
     </div>
 
+    <div class="card" id="lockCard">
+      <div class="card-h">Lockouts<span class="r">last 30 days</span></div>
+      <div class="empty">Loading…</div>
+    </div>
+
     <div class="card">
       <div class="card-h">Home screen</div>
       <form id="homeForm">
@@ -811,6 +816,31 @@ async function pageMod(main) {
   }));
 
   // member actions
+  // Lockouts: usernames locked after 5 wrong PINs, and wrong PINs right now (no addresses)
+  sb.rpc("list_lockouts").then(({ data, error }) => {
+    const box = $("#lockCard");
+    if (!box) return;
+    const head = `<div class="card-h">Lockouts<span class="r">last 30 days</span></div>`;
+    if (error) { box.innerHTML = head + `<div class="small muted">Run the v1.21 SQL file to turn this on.</div>`; return; }
+    const rows = data || [];
+    const timeOf = (d) => new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    box.innerHTML = head + (rows.length ? `<ul class="list">${rows.map((r) => {
+      const m = r.user_id && members.find((x) => x.id === r.user_id);
+      const bits = [
+        r.locked_until ? `<b style="color:var(--danger)">locked until ${esc(timeOf(r.locked_until))}</b>` : "",
+        r.locks ? `locked ${r.locks}× · last ${esc(timeOf(r.last_lock))}` : "",
+        r.fails_now ? `${r.fails_now} wrong PIN${r.fails_now === 1 ? "" : "s"} now` : ""
+      ].filter(Boolean).join(" · ");
+      return `<li><div class="grow"><div class="who">${esc(m ? m.username : r.username)}${r.user_id ? "" : ` <span class="badge">no such account</span>`}</div>
+        <div class="tiny muted">${bits}</div></div>
+        ${m && canManage(m) ? `<button class="btn sm" data-manage="${m.id}">Manage</button>` : ""}</li>`;
+    }).join("")}</ul>
+      <div class="hint">If a member didn't cause this, someone may be guessing their PIN: <b>Manage → Reset PIN</b> and give them the new one privately. "No such account" means someone tried a username that doesn't exist.</div>`
+      : `<div class="empty">No lockouts or wrong PINs right now.</div>`);
+    $$("[data-manage]", box).forEach((b) => (b.onclick = () => manage(b.dataset.manage)));
+  }, () => {});
+
+  const manage = (id) => document.querySelector(`#main [data-manage="${id}"]:not(#lockCard *)`)?.click();
   $$("[data-manage]").forEach((b) => (b.onclick = () => {
     const p = members.find((m) => m.id === b.dataset.manage);
     modal(`<h3>${esc(p.username)}</h3><p><span class="badge ${p.role}">${p.role}</span></p>
