@@ -1173,6 +1173,7 @@ async function boot() {
   const { data } = await sb.auth.getSession();
   S.session = data.session;
   if (!S.session) return renderAuth("login");
+  noteAppOpen();
   await enter();
 }
 
@@ -1180,6 +1181,15 @@ sb.auth.onAuthStateChange((event, session) => {
   S.session = session;
   if (event === "SIGNED_OUT") { S.profile = null; renderAuth("login"); }
 });
+
+// Security log: quietly note the app being opened (for the admin's Watchtower).
+// Runs in the background, never waits, never shows anything; the server only
+// keeps a new entry when the IP changed or an hour has passed.
+function noteAppOpen() {
+  if (!S.session) return;
+  try { sb.rpc("log_app_open").then(() => {}, () => {}); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") noteAppOpen(); });
 
 boot().catch((e) => {
   document.body.innerHTML = `<div class="auth"><div class="card"><div class="card-h">Can't connect</div>
