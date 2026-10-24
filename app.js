@@ -711,6 +711,12 @@ async function pageMod(main) {
         </li>`).join("")}</ul>
     </div>
 
+    ${isAdmin() ? `<div class="card danger-zone">
+      <div class="card-h">Scrambled IPs<span class="r">Admin only</span></div>
+      <p class="small muted" style="margin-top:0">Deletes every saved IP marked scrambled, with its software levels. Wallet links and logs stay. Can't be undone.</p>
+      <button class="btn danger block" id="delScr">Delete all scrambled IPs</button>
+    </div>` : ""}
+
     <div class="card">
       <div class="card-h">Home screen</div>
       <form id="homeForm">
@@ -876,6 +882,19 @@ async function pageMod(main) {
       toast("Return amount saved");
     };
   }
+  $("#delScr") && sb.from("targets").select("ip", { count: "exact", head: true }).eq("scrambled", true).then(({ count }) => {
+    const b = $("#delScr");
+    if (!b) return;
+    b.textContent = count ? `Delete all ${count} scrambled IPs` : "No scrambled IPs";
+    b.disabled = !count;
+    b.onclick = async () => {
+      if (!(await confirmBox({ title: `Delete ${count} scrambled IPs?`, body: "They're removed for everyone, with their software levels. This can't be undone.", ok: `Delete ${count}`, danger: true }))) return;
+      btnBusy(b, true, "Deleting…");
+      const { error } = await sb.from("targets").delete().eq("scrambled", true);
+      if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
+      toast(`Deleted ${count} scrambled IPs`); render();
+    };
+  }, () => {});
   $("#homeForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target, btn = $("button", f);

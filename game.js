@@ -497,7 +497,9 @@ PAGES.ip = async function pageTarget(main, ip) {
       ${PROGRAMS.filter((p) => t.sw_meta && t.sw_meta[p.key]).map((p) =>
         `<div>${esc(p.name)} — ${esc(t.sw_meta[p.key].by)}, ${fmtDateTime(t.sw_meta[p.key].at)}</div>`).join("") || `<div>No software entered yet.</div>`}
       <div>Added by ${esc(t.created_by || "—")}, ${fmtDateTime(t.created_at)} · updated by ${esc(t.updated_by || "—")}, ${fmtDateTime(t.updated_at)}</div>
-    </div>` : ""}`;
+    </div>` : ""}
+    ${t && mod ? `<button class="btn danger block" data-delip style="margin-top:14px">Delete this IP</button>
+      <div class="hint" style="text-align:center">Mods and Admin only. Removes the saved IP and its software levels. Can't be undone.</div>` : ""}`;
 
   const refresh = () => render();
   $("[data-copy]", main).onclick = () => copy(ip);
@@ -539,6 +541,15 @@ PAGES.ip = async function pageTarget(main, ip) {
     try { await upsertTarget({ ip, scrambled: false }); toast("Scrambled removed"); refresh(); } catch (e) { toast(errMsg(e), true); }
   });
   $("[data-inc]", main).onclick = () => askIncorrect(ip);
+  $("[data-delip]", main) && ($("[data-delip]", main).onclick = async () => {
+    if (!(await O().confirmBox({ title: `Delete ${ip}?`,
+      body: "Removes this saved IP, its status, account and crew names, and software levels for everyone. Wallet links and logs stay. This can't be undone.",
+      ok: "Delete", danger: true }))) return;
+    const { error } = await sb.from("targets").delete().eq("ip", ip);
+    if (error) return toast(errMsg(error), true);
+    toast(`${ip} deleted`);
+    history.length > 1 ? history.back() : O().go("lookup");
+  });
 };
 
 /* ---------- account · crew line for list rows ---------- */
