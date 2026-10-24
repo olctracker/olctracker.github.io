@@ -498,8 +498,12 @@ PAGES.ip = async function pageTarget(main, ip) {
         `<div>${esc(p.name)} — ${esc(t.sw_meta[p.key].by)}, ${fmtDateTime(t.sw_meta[p.key].at)}</div>`).join("") || `<div>No software entered yet.</div>`}
       <div>Added by ${esc(t.created_by || "—")}, ${fmtDateTime(t.created_at)} · updated by ${esc(t.updated_by || "—")}, ${fmtDateTime(t.updated_at)}</div>
     </div>` : ""}
-    ${t && mod ? `<button class="btn danger block" data-delip style="margin-top:14px">Delete this IP</button>
-      <div class="hint" style="text-align:center">Mods and Admin only. Removes the saved IP and its software levels. Can't be undone.</div>` : ""}`;
+    ${t && mod ? `<div class="row" style="gap:8px;margin-top:14px">
+        <button class="btn danger grow" data-delip>Delete this IP</button>
+        ${O().isAdmin() ? `<button class="btn danger grow" data-purge>Delete everywhere</button>` : ""}</div>
+      <div class="hint" style="text-align:center">${O().isAdmin()
+        ? "Delete this IP: the saved IP and its software levels (Mods and Admin). Delete everywhere: also unlinks wallets and removes its leads, reports and flags (Admin only). Can't be undone."
+        : "Mods and Admin only. Removes the saved IP and its software levels. Can't be undone."}</div>` : ""}`;
 
   const refresh = () => render();
   $("[data-copy]", main).onclick = () => copy(ip);
@@ -541,6 +545,25 @@ PAGES.ip = async function pageTarget(main, ip) {
     try { await upsertTarget({ ip, scrambled: false }); toast("Scrambled removed"); refresh(); } catch (e) { toast(errMsg(e), true); }
   });
   $("[data-inc]", main).onclick = () => askIncorrect(ip);
+  $("[data-purge]", main) && ($("[data-purge]", main).onclick = async () => {
+    const { data: n, error: e1 } = await sb.rpc("purge_ip", { p_ip: ip, p_dry_run: true });
+    if (e1) return toast(/function|schema/i.test(errMsg(e1)) ? "Run the v1.20.4 SQL file first" : errMsg(e1), true);
+    const parts = [
+      n.saved_ip && "the saved IP and its software levels",
+      (n.wallets_linked || n.wallets_prev) && `${n.wallets_linked + n.wallets_prev} wallet link${n.wallets_linked + n.wallets_prev === 1 ? "" : "s"}`,
+      (n.leads || n.lead_lines) && `its Log Lead (${n.lead_lines} log line${n.lead_lines === 1 ? "" : "s"})`,
+      n.process_finds && `${n.process_finds} Process Lead find${n.process_finds === 1 ? "" : "s"}`,
+      n.spam_report && "its possible-spam report",
+      n.flags && `${n.flags} flag${n.flags === 1 ? "" : "s"}`
+    ].filter(Boolean);
+    if (!(await O().confirmBox({ title: `Delete ${ip} everywhere?`,
+      body: `Removes ${parts.join(", ") || "nothing (it isn't anywhere)"}. Wallet IDs stay, just unlinked. Members' own crypto history and slots aren't touched. This can't be undone.`,
+      ok: "Delete everywhere", danger: true }))) return;
+    const { error } = await sb.rpc("purge_ip", { p_ip: ip, p_dry_run: false });
+    if (error) return toast(errMsg(error), true);
+    toast(`${ip} deleted everywhere`);
+    history.length > 1 ? history.back() : O().go("lookup");
+  });
   $("[data-delip]", main) && ($("[data-delip]", main).onclick = async () => {
     if (!(await O().confirmBox({ title: `Delete ${ip}?`,
       body: "Removes this saved IP, its status, account and crew names, and software levels for everyone. Wallet links and logs stay. This can't be undone.",
