@@ -601,3 +601,10 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .ip-grp.done .rp-ip { opacity: .55; }
 .rp-row.sub { padding: 4px 0 4px 56px; border-top: 0; }
 .rp-row.sub .ck { width: 32px; height: 32px; }
+
+/* Home: one-line Lookup shortcut */
+.home-look { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; padding: 6px 6px 6px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.home-look label { font: 600 12px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); white-space: nowrap; }
+.home-look .input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; border: 0; background: transparent; font-family: "JetBrains Mono", monospace; font-size: 16px; }
+.home-look .input:focus { outline: none; }
+.home-look:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }

@@ -449,6 +449,11 @@ async function pageHome(main) {
       <div class="sub">Welcome back, <b>${esc(S.profile.username)}</b></div>
     </div>
 
+    <form class="home-look" id="homeLook" autocomplete="off">
+      <label for="homeQ">Lookup:</label>
+      <input class="input" id="homeQ" type="search" name="q" placeholder="Wallet, IP, name, tag" autocapitalize="none" spellcheck="false" enterkeyhint="search">
+    </form>
+
     <div class="card">
       <div class="card-h">Message of the day</div>
       <div class="pre">${esc(S.settings.motd) || `<span class="muted">No message yet.</span>`}</div>
@@ -481,6 +486,14 @@ async function pageHome(main) {
       </div>
     </div>`;
 
+  $("#homeLook").onsubmit = (e) => {
+    e.preventDefault();
+    const q = $("#homeQ").value.trim();
+    if (!q) return;
+    try { sessionStorage.setItem("olc-lookup", q); } catch (err) {}
+    $("#homeQ").blur();
+    go("lookup");
+  };
   $("#dismissInstall") && ($("#dismissInstall").onclick = () => {
     try { localStorage.setItem("olc-install-dismissed", "1"); } catch (e) {}
     $("#installCard").remove();
