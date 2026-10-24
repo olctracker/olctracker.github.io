@@ -698,6 +698,7 @@ function walletCard(w, tmap) {
       ${t?.scrambled ? "" : `<button class="btn sm" data-scr="${esc(w.ip)}">Mark IP scrambled</button>`}
       <a class="btn sm primary" href="${ipHref(w.ip)}">Open IP ${IC.chev}</a></div>` : ""}
     <div class="tiny muted" style="margin-top:10px">Updated by ${esc(w.updated_by || "—")}, ${fmtDateTime(w.updated_at)}</div>
+    ${O().isMod() ? `<div class="row" style="margin-top:10px"><button class="btn sm danger" data-delw="${esc(w.wallet)}">Delete wallet</button></div>` : ""}
   </div>`;
 }
 
@@ -772,6 +773,16 @@ PAGES.lookup = async function pageLookup(main) {
       ${!term && !wallets.length ? `<div class="card"><div class="empty">No wallets yet. They fill in as crew members paste logs (stage 4).</div></div>` : ""}`;
     $$("[data-copy]", out).forEach((b) => (b.onclick = () => copy(b.dataset.copy)));
     $$("[data-scr]", out).forEach((b) => (b.onclick = async () => { if (await askScrambled(b.dataset.scr)) show(input.value); }));
+    $$("[data-delw]", out).forEach((b) => (b.onclick = async () => {
+      const w = b.dataset.delw;
+      if (!(await O().confirmBox({ title: `Delete wallet ${w}?`,
+        body: "Removes this wallet ID and its current and previous IP links for everyone. Saved IPs, leads and members' own crypto history stay. If it shows up in someone's log again, it will be added back. This can't be undone.",
+        ok: "Delete wallet", danger: true }))) return;
+      const { error } = await sb.from("wallets").delete().eq("wallet", w);
+      if (error) return O().toast(O().errMsg(error), true);
+      O().toast(`Wallet ${w} deleted`);
+      show(input.value);
+    }));
     bindRows(out);
     const addThis = $("[data-addthis]", out);
     if (addThis) addThis.onclick = () => addIp(term);
