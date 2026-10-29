@@ -16,8 +16,16 @@ const CLASSES = [
 const SPLIT_FROM = 6;                           // from R6 on, device and network can differ
 const APEX_BYPASS = 3;
 const clsName = (k) => (CLASSES.find((c) => c.key === k) || {}).name || "";
+const HARDWARE = [
+  { key: "device_level", name: "Device", max: 12 },
+  { key: "network_level", name: "Network", max: 11 },
+  { key: "botnet_level", name: "Botnet", max: 7 }
+];
+const ONE_TIME = [{ key: "notepad", name: "Notepad" }, { key: "message_encryptor", name: "Message Encryptor" }];
+const BOTNET_TIERS = ["Free", "Node", "Cluster", "Grid", "Farm", "Hive", "Nexus"];
 const appName = (k) => k === "keygen" ? "Keygen" : k === "player_level" ? "Player level"
-  : (G().PROGRAMS.find((p) => p.key === k) || { name: k }).name;
+  : (HARDWARE.find((h) => h.key === k) || {}).name || (ONE_TIME.find((h) => h.key === k) || {}).name
+  || (G().PROGRAMS.find((p) => p.key === k) || { name: k }).name;
 const DAY = 86400000;
 const days = (a, b) => (new Date(b) - new Date(a)) / DAY;
 const fmtDays = (d) => (d < 10 ? (Math.round(d * 10) / 10) : Math.round(d)) + "d";
@@ -168,6 +176,8 @@ PAGES.device = async function pageDevice(main) {
   catch (e) { main.innerHTML = missingDb(e) ? needUpdate : `<div class="card"><p>${esc(errMsg(e))}</p></div>`; return; }
   const r = d?.reboots ?? 0, split = r >= SPLIT_FROM;
   const foldOpen = (() => { try { return sessionStorage.getItem("olc-dev-fold") === "1"; } catch (e) { return false; } })();
+  const hwOpen = (() => { try { return sessionStorage.getItem("olc-hw-fold") === "1"; } catch (e) { return false; } })();
+  const hwVal = (h) => d?.[h.key] == null ? "—" : h.key === "botnet_level" ? (BOTNET_TIERS[d[h.key] - 1] || d[h.key]) : d[h.key];
 
   main.innerHTML = `
     <div class="card accent">
@@ -192,7 +202,18 @@ PAGES.device = async function pageDevice(main) {
     </div>
 
     <div class="card">
-      <details class="fold" ${foldOpen ? "open" : ""}><summary>Reboot, class &amp; wallet</summary>
+      <details class="fold" data-hwfold ${hwOpen ? "open" : ""}><summary>Device, network, botnet &amp; one-time</summary>
+        <div class="stats" style="margin-top:12px">${HARDWARE.map((h) => `
+          <button class="stat" data-hw="${h.key}"><div class="k">${h.name}</div><div class="v">${esc(String(hwVal(h)))}</div></button>`).join("")}</div>
+        <div class="flabel" style="margin-top:14px">One-time purchases</div>
+        <div class="sw-grid">${ONE_TIME.map((o) => `
+          <button class="sw-tile ${d?.[o.key] ? "" : "miss"}" data-once="${o.key}"><span>${esc(o.name)}</span><b>${d?.[o.key] ? "Owned" : "No"}</b></button>`).join("")}</div>
+        <div class="hint">Tap to change. Used by Import my device in the Calculator and Character Builder.</div>
+      </details>
+    </div>
+
+    <div class="card">
+      <details class="fold" data-rbfold ${foldOpen ? "open" : ""}><summary>Reboot, class &amp; wallet</summary>
         <div class="flabel" style="margin-top:12px">Reboots done</div>
         <div class="stepper"><button class="btn" data-step="-1" ${r <= 0 ? "disabled" : ""}>−</button><b class="mono">R${r}</b><button class="btn" data-step="1">+</button></div>
         <div class="hint">For reboots before you used the app. Changing this doesn't reset anything.</div>
@@ -214,7 +235,27 @@ PAGES.device = async function pageDevice(main) {
     try { await saveDevice(changes); toast(msg); render(); }
     catch (e) { toast(missingDb(e) ? "Needs the latest database update (ask the Admin)" : errMsg(e), true); }
   };
-  $("details", main).addEventListener("toggle", (e) => { try { sessionStorage.setItem("olc-dev-fold", e.target.open ? "1" : "0"); } catch (x) {} });
+  $("[data-rbfold]", main).addEventListener("toggle", (e) => { try { sessionStorage.setItem("olc-dev-fold", e.target.open ? "1" : "0"); } catch (x) {} });
+  $("[data-hwfold]", main).addEventListener("toggle", (e) => { try { sessionStorage.setItem("olc-hw-fold", e.target.open ? "1" : "0"); } catch (x) {} });
+  $$("[data-hw]", main).forEach((b) => (b.onclick = async () => {
+    const h = HARDWARE.find((x) => x.key === b.dataset.hw);
+    if (h.key === "botnet_level") {
+      const pick = await new Promise((done) => O().modal(`<h3>Botnet</h3>
+        ${BOTNET_TIERS.map((t, i) => `<button class="sheet-btn ${d?.botnet_level === i + 1 ? "on" : ""}" data-t="${i + 1}">${t}</button>`).join("")}
+        <button class="btn block" data-t="" style="margin-top:10px">Cancel</button>`,
+        (w, close) => $$("[data-t]", w).forEach((x) => (x.onclick = () => { close(); done(x.dataset.t ? Number(x.dataset.t) : null); }))));
+      if (pick) save({ botnet_level: pick }, `Botnet: ${BOTNET_TIERS[pick - 1]}`);
+      return;
+    }
+    const v = await numberAsk(h.name, d?.[h.key], `Level 1 to ${h.max}`);
+    if (v === undefined) return;
+    if (v < 1 || v > h.max) return toast(`${h.name} is level 1 to ${h.max}`, true);
+    save({ [h.key]: v }, `${h.name} saved`);
+  }));
+  $$("[data-once]", main).forEach((b) => (b.onclick = () => {
+    const k = b.dataset.once, on = d?.[k] ? 0 : 1;
+    save({ [k]: on }, `${appName(k)}: ${on ? "owned" : "not owned"}`);
+  }));
   $("[data-copy]", main) && ($("[data-copy]", main).onclick = () => copy(d.ip));
   $("[data-ip]", main).onclick = async () => {
     const v = await textAsk("My IP", d?.ip, { placeholder: "123.45.67.89",

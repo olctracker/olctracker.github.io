@@ -60,7 +60,11 @@ async function importInto(state) {
   if (!d) { O().toast("Set up My Device first", true); return false; }
   state.cur = state.cur || {};
   let got = 0;
-  for (const it of U().ITEMS) if (d[it.key] != null) { state.cur[it.key] = String(d[it.key]); got++; }
+  const col = { device: "device_level", network: "network_level", botnet: "botnet_level" };
+  for (const it of U().ITEMS) {
+    const v = d[col[it.key] || it.key];
+    if (v != null) { state.cur[it.key] = String(v); got++; }
+  }
   if (d.player_level != null) { state.lvl = String(d.player_level); state.xp = ""; }
   O().toast(`Imported ${got} level${got === 1 ? "" : "s"} from My Device`);
   return true;
