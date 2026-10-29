@@ -601,3 +601,37 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .ip-grp.done .rp-ip { opacity: .55; }
 .rp-row.sub { padding: 4px 0 4px 56px; border-top: 0; }
 .rp-row.sub .ck { width: 32px; height: 32px; }
+
+/* ---------- Calculator & Character Builder (v1.21) ---------- */
+.up-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.up-three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.up-three:empty { display: none; }
+.up-three-in { display: grid; grid-template-columns: .8fr 1fr 1.2fr; gap: 8px; }
+.up-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.up-f > span, .up-costs span, .up-totals span, .up-cost > span { font: 600 9.5px "JetBrains Mono", monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+.up-f .input { min-height: 40px; padding: 6px 4px; text-align: center; font-size: 16px; min-width: 0; }
+.up-f select.input { padding: 6px 2px; text-align: left; font-size: 14px; }
+.up-cost { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 8px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.up-cost b { font-size: 15px; overflow-wrap: anywhere; }
+.up-cost em { font: normal 11px "JetBrains Mono", monospace; color: var(--dim); overflow-wrap: anywhere; }
+.up-calc.on, .up-card.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.up-bad { color: var(--danger); font-size: 12px; }
+.up-warn { color: var(--warn); }
+.up-group { font: 600 11px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 14px 4px 8px; }
+.up-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 560px) { .up-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.up-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.up-name { font-weight: 700; font-size: 14px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-costs > div, .up-totals > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: center; }
+.up-costs b { font-size: 13px; overflow-wrap: anywhere; }
+.up-totals > div { padding: 8px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.up-totals b { font-size: 17px; }
+.up-res { padding: 9px 11px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); margin-top: 8px; }
+.up-res-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; }
+.up-res-top b { font-size: 18px; color: var(--accent); white-space: nowrap; }
+.up-res .tiny { overflow-wrap: anywhere; }
+.up-shot { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); margin-top: 12px; display: block; }
+.up-sheet { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.45 "JetBrains Mono", monospace; margin: 0; padding: 12px;
+  border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); user-select: text; -webkit-user-select: text; }
+.soon-row { padding: 8px 0; border-top: 1px solid var(--line); }
+.soon-row:first-of-type { border-top: 0; }

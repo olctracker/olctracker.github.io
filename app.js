@@ -134,6 +134,9 @@ const ICON = {
   route: I('<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7a3 3 0 000-6H9a3 3 0 010-6h7"/>'),
   direct: I('<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M7.5 16.5L16.5 7.5"/>'),
   coverage: I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5l2 2 4-4"/>'),
+  calc: I('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 18h8"/>'),
+  builder: I('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
+  formulas: I('<path d="M5 4h14v16H5z"/><path d="M8 8h3M9.5 6.5v3M13 8h3M8 14l3 3M11 14l-3 3M13 15.5h3"/>'),
   reboot: I('<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.1L4 10"/>')
 };
 
@@ -159,16 +162,17 @@ const NAV = [
   { id: "leads", label: "Log Leads", icon: "leads" },
   { id: "pleads", label: "Process Leads", icon: "pleads" },
   { id: "reboot", label: "Last Reboot", icon: "reboot" },
-  { sec: "Crew", modOnly: true },
+  { sec: "Crew" },
+  { id: "calc", label: "Calculator", icon: "calc" },
+  { id: "builder", label: "Character Builder", icon: "builder" },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
   { id: "review", label: "Mod Review", icon: "review", modOnly: true },
   { id: "coverage", label: "Software Coverage", icon: "coverage", modOnly: true },
   { id: "top", label: "Server Top 25", icon: "top", adminOnly: true },
   { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
-  { id: "rplan", label: "Reboot Planner", icon: "route", adminOnly: true },
-  { id: "dplan", label: "Direct Reboot Planner", icon: "direct", adminOnly: true },
   { sec: "You" },
-  { id: "settings", label: "Settings", icon: "settings" }
+  { id: "settings", label: "Settings", icon: "settings" },
+  { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true }
 ];
 
 const SOON_TEXT = {

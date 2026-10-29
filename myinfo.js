@@ -310,6 +310,26 @@ function buildGuide(d, targets) {
   return { cards, notFound, keygenWait, unknown, limit };
 }
 
+/* IPs the guide would pick for each app's next 3 levels (its main picks and safer picks), one entry per IP. */
+function soonIps(d, targets, rounds = 3) {
+  const out = new Map();
+  let cur = { ...d };
+  for (let i = 0; i < rounds; i++) {
+    const g = buildGuide(cur, targets);
+    if (!g.cards.length) break;
+    const next = { ...cur };
+    for (const c of g.cards) {
+      if (!out.has(c.ip)) out.set(c.ip, c.fw);
+      for (const r of c.rows) {
+        if (r.safer && !out.has(r.safer.ip)) out.set(r.safer.ip, r.safer.fw);
+        next[r.p.key] = r.lvl;                      // assume the guide's pick was taken
+      }
+    }
+    cur = next;
+  }
+  return [...out].map(([ip, fw]) => ({ ip, fw })).sort((a, b) => a.fw - b.fw || a.ip.localeCompare(b.ip));
+}
+
 PAGES.leveling = async function pageLeveling(main) {
   const { esc, $$, toast, errMsg, render, modal, $ } = O();
   const { IC, copy } = G();
@@ -327,6 +347,7 @@ PAGES.leveling = async function pageLeveling(main) {
   let targets = (await loadTargets()).filter((t) => t.ip !== d.ip && G().isFullIp(t.ip));
   targets = await G().dropCrew(targets, (t) => [t.ip]);
   const g = buildGuide(d, targets);
+  const soon = soonIps(d, targets);
   const skipNote = (s) => s.length ? `<div class="skip">skips ${s.length} level${s.length === 1 ? "" : "s"} (${s.join(", ")})</div>` : "";
 
   main.innerHTML = `
@@ -360,9 +381,25 @@ PAGES.leveling = async function pageLeveling(main) {
     ${g.keygenWait.length ? `<div class="card"><div class="card-h">Waiting on Keygen</div>
       <p class="small muted" style="margin:0">${esc(g.keygenWait.map((p) => p.name).join(", "))} ${g.keygenWait.length === 1 ? "is" : "are"} at your Keygen (${d.keygen}). Level Keygen first.</p></div>` : ""}
     ${g.unknown.length ? `<div class="card"><div class="card-h">Levels missing</div>
-      <p class="small muted" style="margin:0">Add ${esc(g.unknown.map((p) => p.name).join(", "))} in <a href="#/device">My Device</a> to include ${g.unknown.length === 1 ? "it" : "them"}.</p></div>` : ""}`;
+      <p class="small muted" style="margin:0">Add ${esc(g.unknown.map((p) => p.name).join(", "))} in <a href="#/device">My Device</a> to include ${g.unknown.length === 1 ? "it" : "them"}.</p></div>` : ""}
+    <div class="card">
+      <div class="card-h">IPs needing to be bypassed soon<span class="r">${soon.length} IP${soon.length === 1 ? "" : "s"}</span></div>
+      ${soon.length ? `<button class="btn block" data-copyall style="margin-bottom:10px">${IC.copy} Copy all ${soon.length}</button>
+        ${soon.map((x) => `<div class="row soon-row">
+          <div class="fw-pill mono ${x.fw > g.limit ? "over" : ""}"><small>FW</small>${x.fw}</div>
+          <a class="grow mono ip-row" href="#/ip/${encodeURIComponent(x.ip)}">${esc(x.ip)}</a>
+          <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${IC.copy}</button></div>`).join("")}`
+        : `<div class="empty">Nothing to plan yet.</div>`}
+      <div class="hint">Every IP the guide would pick for the next 3 levels of each app (up to Keygen ${d.keygen}), lowest firewall first. Bypass them ahead of time.</div>
+    </div>`;
 
   $$("[data-copy]", main).forEach((b) => (b.onclick = () => copy(b.dataset.copy)));
+  const all = $("[data-copyall]", main);
+  if (all) all.onclick = async () => {
+    const text = soon.map((x) => x.ip).join("\n");
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${soon.length} IP${soon.length === 1 ? "" : "s"}`); }
+    catch (e) { copy(text); }
+  };
   const rows = new Map(g.cards.flatMap((c) => c.rows.map((r) => [r.p.key, r])));
   $$("[data-done]", main).forEach((b) => (b.onclick = async () => {
     const r = rows.get(b.dataset.done);
