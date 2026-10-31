@@ -96,7 +96,78 @@ function readSoftwarePaste(text, opts = {}) {
   }
   return levels;
 }
-window.OLC_GAME_TEST = { readSoftwarePaste, isFullIp };
+/* ---------- enemy Device Home / Wallet / Apps paste reader ----------
+   Works on any of the three screens, one at a time or all pasted together.
+   Device Home: name (line above LVL, skipping "_", "badge" and the [TAG]),
+     crew tag ([XR]), player level, reputation, IP, Firewall and Encryptor.
+   Wallet: "NAME's wallet" and the line after WALLET ADDRESS.
+   Apps: "NAME's installed software" and the software levels.
+   Device model, network and crypto amounts are not kept. */
+function readTargetPaste(text) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.trim().replace(/\s+/g, " ")).filter(Boolean);
+  const low = lines.map((l) => l.toLowerCase());
+  const out = { names: [], screens: [] };
+  const addName = (n, where) => { n = String(n || "").trim(); if (n && n.length <= 40) out.names.push({ name: n, where }); };
+
+  // Device Home: "LVL n" followed (past "//") by "REP n"
+  for (let i = 0; i < low.length; i++) {
+    const lv = /^lvl\.?\s*(\d{1,4})$/.exec(low[i]);
+    if (!lv) continue;
+    let j = i + 1; while (j < low.length && /^\/\/\s*$/.test(low[j])) j++;
+    const rep = /^rep\.?\s*([\d,]{1,15})$/.exec(low[j] || "");
+    if (!rep) continue;
+    out.screens.push("device");
+    out.player_level = Number(lv[1]);
+    out.reputation = Number(rep[1].replace(/,/g, ""));
+    for (let k = i - 1; k >= 0 && k >= i - 5; k--) {
+      const t = /^\[([^\[\]]{1,12})\]$/.exec(lines[k]);
+      if (t) { out.crew_tag = t[1].trim(); continue; }
+      if (/^(_|badge|\/\/)$/i.test(lines[k])) continue;
+      if (/^enemy device home:?$/i.test(lines[k])) break;
+      addName(lines[k], "Device"); break;
+    }
+    break;
+  }
+  // Device Home system info: IP, Firewall, Encryptor
+  const ipAt = low.indexOf("ip");
+  if (ipAt >= 0 && isFullIp(tidyIp(lines[ipAt + 1] || ""))) out.ip = tidyIp(lines[ipAt + 1]);
+  const lvAfter = (label) => {
+    const i = low.indexOf(label);
+    const m = i >= 0 && /^lv?l?\.?\s*(\d{1,4})$/.exec(low[i + 1] || "");
+    return m ? Number(m[1]) : null;
+  };
+  if (out.screens.includes("device")) {
+    const fw = lvAfter("firewall"), en = lvAfter("encryptor");
+    out.device_sw = {};
+    if (fw != null) out.device_sw.firewall = fw;
+    if (en != null) out.device_sw.password_encryptor = en;
+  }
+  // Wallet
+  const wAt = low.indexOf("wallet address");
+  if (wAt >= 0 && /^[a-z0-9]{6,80}$/i.test(lines[wAt + 1] || "")) { out.wallet = lines[wAt + 1]; out.screens.push("wallet"); }
+  lines.forEach((l) => {
+    let m = /^(.+?)['’]s wallet$/i.exec(l);
+    if (m) { addName(m[1], "Wallet"); if (!out.screens.includes("wallet")) out.screens.push("wallet"); }
+    m = /^(.+?)['’]s installed software$/i.exec(l);
+    if (m) addName(m[1], "Apps");
+  });
+  // Apps (software screen)
+  const sw = readSoftwarePaste(lines.filter((l, i) => !(i > 0 && /^(firewall|encryptor)$/.test(low[i - 1]) && low.indexOf("ip") >= 0 && i > low.indexOf("ip"))).join("\n"));
+  const appsOnly = {};
+  // software levels from the Apps screen win over Device Home ones
+  if (/installed software/i.test(text) || Object.keys(sw).length > 2) {
+    Object.assign(appsOnly, sw);
+    if (Object.keys(appsOnly).length) out.screens.push("apps");
+  }
+  out.software = { ...(out.device_sw || {}), ...appsOnly };
+  delete out.device_sw;
+  // one name, or a warning if they differ
+  const uniq = [...new Set(out.names.map((n) => n.name.toLowerCase()))];
+  out.name = out.names.length ? out.names[0].name : null;
+  out.nameClash = uniq.length > 1;
+  return out;
+}
+window.OLC_GAME_TEST = { readSoftwarePaste, readTargetPaste, isFullIp };
 
 /* ---------- crew devices: never targets ----------
    Members' current device IPs and wallet IDs are hidden. The database hides them
@@ -928,6 +999,11 @@ PAGES.add = async function pageAdd(main, prefill) {
     <form data-form autocomplete="off">
       <div class="card accent">
         <div class="card-h">Add IP</div>
+        <button type="button" class="btn block" data-tpaste style="margin-bottom:12px">${IC.paste} Paste device / wallet / apps</button>
+        <div data-tpastebox hidden style="margin-bottom:14px">
+          <textarea class="input mono" rows="5" placeholder="Paste the Device Home, Wallet or Apps screen. One at a time or all together."></textarea>
+          <div class="small" data-tpastemsg style="margin-top:8px"></div>
+        </div>
         <label class="f"><span>IP</span><input class="input mono" name="ip" inputmode="decimal" placeholder="123.45.67.89" value="${esc(prefill)}"></label>
         <div data-known></div>
         <label class="f"><span>Account name (optional)</span><input class="input" name="account_name" maxlength="40" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="In-game account name"></label>
@@ -1039,6 +1115,33 @@ PAGES.add = async function pageAdd(main, prefill) {
   };
   f.ip.addEventListener("input", () => checkIp());
   if (prefill) checkIp(); else setTimeout(() => f.ip.focus(), 60);
+
+  // Paste Device Home / Wallet / Apps: fills everything it finds
+  const tbox = $("[data-tpastebox]", main), tta = $("textarea", tbox), tmsg = $("[data-tpastemsg]", main);
+  $("[data-tpaste]", main).onclick = () => { tbox.hidden = !tbox.hidden; if (!tbox.hidden) tta.focus(); };
+  tta.addEventListener("input", () => {
+    if (!tta.value.trim()) { tmsg.innerHTML = ""; return; }
+    const r = readTargetPaste(tta.value);
+    const got = [];
+    if (r.ip) { f.ip.value = r.ip; got.push(`IP <span class="mono">${esc(r.ip)}</span>`); }
+    if (r.name) { f.account_name.value = r.name; got.push(`name <b>${esc(r.name)}</b>`); }
+    if (r.crew_tag) { f.crew_tag.value = r.crew_tag; got.push(`tag <span class="mono">[${esc(r.crew_tag)}]</span>`); }
+    if (r.player_level != null) { f.player_level.value = r.player_level; got.push(`LVL ${r.player_level}`); }
+    if (r.reputation != null) { f.reputation.value = r.reputation; got.push(`rep ${r.reputation.toLocaleString()}`); }
+    if (r.wallet) { f.wallet.value = r.wallet; got.push("wallet ID"); }
+    const swN = Object.keys(r.software).length;
+    Object.entries(r.software).forEach(([k, v]) => (f[k].value = v));
+    if (swN) got.push(`${swN} software level${swN === 1 ? "" : "s"}`);
+    countSw();
+    const scr = { device: "Device Home", wallet: "Wallet", apps: "Apps" };
+    tmsg.innerHTML = !got.length
+      ? `<span class="muted">Nothing found yet. Copy the whole screen from the game.</span>`
+      : `<div class="tiny mono muted">READ ${r.screens.map((x) => scr[x]).join(" + ").toUpperCase() || "PASTE"}</div>
+         <div>${got.join(" · ")}</div>
+         ${r.nameClash ? `<div class="err" style="margin-top:6px">Names don't match: ${r.names.map((n) => `${esc(n.name)} (${n.where})`).join(", ")}. Check these are the same player.</div>` : ""}
+         ${!r.ip && !isFullIp(tidyIp(f.ip.value)) ? `<div class="hint" style="margin-top:6px">No IP in this paste. Paste the Device Home too, or type the IP.</div>` : ""}`;
+    checkIp();
+  });
 
   // Paste the software screen: fills the boxes
   const pbox = $("[data-pastebox]", main), pta = $("textarea", pbox);
