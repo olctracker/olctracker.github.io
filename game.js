@@ -155,7 +155,7 @@ function readTargetPaste(text) {
   const sw = readSoftwarePaste(lines.filter((l, i) => !(i > 0 && /^(firewall|encryptor)$/.test(low[i - 1]) && low.indexOf("ip") >= 0 && i > low.indexOf("ip"))).join("\n"));
   const appsOnly = {};
   // software levels from the Apps screen win over Device Home ones
-  if (/installed software/i.test(text) || Object.keys(sw).length > 2) {
+  if (/installed software/i.test(text) || Object.keys(sw).length > 2 || !out.screens.includes("device")) {
     Object.assign(appsOnly, sw);
     if (Object.keys(appsOnly).length) out.screens.push("apps");
   }
@@ -334,37 +334,72 @@ function keypadDialog(ip, target, startAt = 0) {
   });
 }
 
-/* ---------- paste dialog with live preview ---------- */
+/* ---------- paste dialog with live preview ----------
+   Reads Device Home, Wallet and Apps (any or all). Saves only what changed.
+   A paste whose IP is a different one is not saved here. */
 function pasteDialog(ip, target) {
-  const { modal, $, esc, toast, errMsg } = O();
+  const { modal, $, esc, toast, errMsg, sb } = O();
   return new Promise((done) => {
-    modal(`<h3>Paste software</h3>
-      <p>Copy the player's software screen in the game and paste it here. Only the levels are kept.</p>
-      <textarea class="input mono" rows="6" placeholder="Antivirus&#10;Scans and removes viruses…&#10;LVL 34&#10;…"></textarea>
+    modal(`<h3>Paste device / wallet / apps</h3>
+      <p>Copy the player's Device Home, Wallet or Apps screen in the game and paste it here. One at a time or all together.</p>
+      <textarea class="input mono" rows="6" placeholder="Paste the Device Home, Wallet or Apps screen…"></textarea>
       <div data-prev style="margin-top:12px"></div>
       <div class="btns" style="margin-top:12px"><button class="btn" data-no>Cancel</button><button class="btn primary" data-yes disabled>Save</button></div>`,
     (w, close) => {
       const ta = $("textarea", w);
-      let found = {};
+      let row = {}, wallet = null;
+      const t0 = target || {};
       const preview = () => {
-        found = readSoftwarePaste(ta.value);
-        const n = Object.keys(found).length;
-        $("[data-yes]", w).disabled = !n;
+        const r = readTargetPaste(ta.value);
+        const sw = r.software, n = Object.keys(sw).length;
+        const other = r.ip && r.ip !== ip;
+        row = {}; wallet = null;
+        const info = [];
+        const set = (k, v, label) => { if (v == null || v === "") return; info.push(`${label}${t0[k] != null && String(t0[k]) !== String(v) ? ` <span class="muted">(was ${esc(String(t0[k]))})</span>` : ""}`); if (String(t0[k] ?? "") !== String(v)) row[k] = v; };
+        set("account_name", r.name, `name <b>${esc(r.name || "")}</b>`);
+        set("crew_tag", r.crew_tag, `tag <span class="mono">[${esc(r.crew_tag || "")}]</span>`);
+        set("player_level", r.player_level, `LVL ${r.player_level}`);
+        set("reputation", r.reputation, `rep ${r.reputation != null ? r.reputation.toLocaleString() : ""}`);
+        PROGRAMS.forEach((p) => { if (p.key in sw && (t0[p.key] == null || Number(t0[p.key]) !== sw[p.key])) row[p.key] = sw[p.key]; });
+        if (r.wallet) { wallet = r.wallet; info.push("wallet ID"); }
+        const any = Object.keys(row).length || wallet;
+        $("[data-yes]", w).disabled = !any || other;
         $("[data-prev]", w).innerHTML = !ta.value.trim() ? "" : `
-          <div class="tiny mono muted" style="margin-bottom:6px">FOUND ${n} OF ${PROGRAMS.length}</div>
+          ${other ? `<div class="err" style="margin-bottom:10px">This paste is for <span class="mono">${esc(r.ip)}</span>, not this IP. <a href="${ipHref(r.ip)}" data-go>Open it instead</a> or use Add IP.</div>` : ""}
+          ${r.nameClash ? `<div class="err" style="margin-bottom:10px">Names don't match: ${r.names.map((x) => `${esc(x.name)} (${x.where})`).join(", ")}. Check these are the same player.</div>` : ""}
+          ${!other && t0.account_name && r.name && t0.account_name.toLowerCase() !== r.name.toLowerCase() ? `<div class="hint" style="margin-bottom:10px">Saved name is <b>${esc(t0.account_name)}</b>. Saving changes it to <b>${esc(r.name)}</b>.</div>` : ""}
+          ${info.length ? `<div class="small" style="margin-bottom:10px">${info.join(" · ")}</div>` : ""}
+          ${n ? `<div class="tiny mono muted" style="margin-bottom:6px">SOFTWARE: FOUND ${n} OF ${PROGRAMS.length}</div>
           <div class="sw-grid">${PROGRAMS.map((p) => {
-            const has = p.key in found, old = target ? target[p.key] : null;
+            const has = p.key in sw, old = t0[p.key];
             return `<div class="sw-tile ${has ? "" : "miss"}"><span>${esc(p.name)}</span>
-              <b>${has ? found[p.key] : dash(old)}</b><em>${has ? (old != null && old !== found[p.key] ? `was ${old}` : "new") : "kept"}</em></div>`;
-          }).join("")}</div>`;
+              <b>${has ? sw[p.key] : dash(old)}</b><em>${has ? (old != null && old !== sw[p.key] ? `was ${old}` : old == null ? "new" : "same") : "kept"}</em></div>`;
+          }).join("")}</div>` : ""}
+          ${!info.length && !n ? `<div class="muted small">Nothing found yet. Copy the whole screen from the game.</div>` : ""}
+          ${!other && (info.length || n) && !any ? `<div class="muted small" style="margin-top:8px">Everything already matches. Nothing to save.</div>` : ""}`;
+        const go = $("[data-go]", w); if (go) go.onclick = () => { close(); done(false); };
       };
       ta.addEventListener("input", preview);
       setTimeout(() => ta.focus(), 60);
       $("[data-no]", w).onclick = () => { close(); done(false); };
       $("[data-yes]", w).onclick = async () => {
         close();
-        try { const a = await upsertTarget({ ip, ...found }); toast(`Saved ${Object.keys(found).length} levels` + activeNote(a)); done(true); }
-        catch (e) { toast(errMsg(e), true); done(false); }
+        try {
+          const parts = [];
+          let a = false;
+          if (Object.keys(row).length) {
+            a = await upsertTarget({ ip, ...row });
+            const nsw = PROGRAMS.filter((p) => p.key in row).length;
+            if (nsw) parts.push(`${nsw} level${nsw === 1 ? "" : "s"}`);
+            if (Object.keys(row).length > nsw) parts.push("player info");
+          }
+          if (wallet) {
+            const { error } = await sb.rpc("link_wallet", { p_wallet: wallet, p_ip: ip });
+            if (error) throw error;
+            parts.push("wallet");
+          }
+          toast(`Saved ${parts.join(", ")}` + activeNote(a)); done(true);
+        } catch (e) { toast(errMsg(e), true); done(true); }
       };
     });
   });
@@ -688,7 +723,7 @@ PAGES.software = async function pageSoftware(main) {
         </div>
         <button class="btn primary block" type="submit" style="margin-top:12px">${IC.search} Search</button>
       </form>
-      <div class="hint">All programs ranks IPs by how many of their 10 programs are at that level.</div>
+      <div class="hint">All programs ranks IPs by how many of their 10 programs are at that level. Scrambled IPs are left out.</div>
       <div data-results style="margin-top:12px"></div>
     </div>
 
@@ -711,7 +746,7 @@ PAGES.software = async function pageSoftware(main) {
     sessionStorage.setItem("olc-sw-search", JSON.stringify({ prog, lvl }));
     results.innerHTML = `<div class="empty">Searching…</div>`;
     const n = Number(lvl);
-    let q = sb.from("targets").select("*");
+    let q = sb.from("targets").select("*").eq("scrambled", false);   // scrambled IPs can't be found in the game
     q = prog === "all" ? q.or(PROGRAMS.map((p) => `${p.key}.eq.${n}`).join(",")) : q.eq(prog, n);
     const { data, error } = await q.limit(300);
     if (error) { results.innerHTML = `<div class="err">${esc(errMsg(error))}</div>`; return; }
