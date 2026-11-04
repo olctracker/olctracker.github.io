@@ -709,7 +709,7 @@ async function pageMod(main) {
       <div class="card-h">Members<span class="r">${members.length}</span></div>
       <ul class="list">${members.map((p) => `
         <li><div class="grow"><div class="who">${esc(p.username)}${p.id === S.profile.id ? ` <span class="muted tiny">(you)</span>` : ""}</div>
-          <div class="tiny muted">Joined ${fmtDate(p.created_at)}${p.skip_checks ? ` · <span class="badge">skips checks</span>` : ""}</div></div>
+          <div class="tiny muted">Joined ${fmtDate(p.created_at)}${p.skip_checks ? ` · <span class="badge">skips checks</span>` : ""}${isAdmin() && (p.companion || p.role === "admin") ? ` · <span class="badge">companion</span>` : ""}</div></div>
           <span class="badge ${p.role}">${p.role}</span>
           ${canManage(p) ? `<button class="icon-btn" data-manage="${p.id}" aria-label="Manage ${esc(p.username)}">${ICON.dots}</button>` : `<span style="width:44px"></span>`}
         </li>`).join("")}</ul>
@@ -751,6 +751,15 @@ async function pageMod(main) {
         <div class="hint">The home screen icon. Square, at least 512×512 is best; phones round the corners. It's the default for everyone: Android phones update on their own (usually within a day), iPhones when the app is added again.${S.settings.phone_icon_at ? ` Last changed ${fmtDateTime(S.settings.phone_icon_at)}.` : ""}</div>
       </div>
     </div>
+
+    ${isAdmin() ? `<div class="card">
+      <div class="card-h">Companion<span class="r">Admin only</span></div>
+      <p class="small muted" style="margin-top:0">Give or remove Companion access, and reset someone's phone, from the ⋯ next to their name. Builds older than this minimum have to update before they can run macros (0 = no minimum).</p>
+      <form id="compMinForm" class="row" style="gap:8px">
+        <input class="input mono grow" name="b" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" value="${esc(S.settings.companion_min_build ?? 0)}">
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+    </div>` : ""}
 
     ${isAdmin() ? `<div class="card">
       <div class="card-h">Log Leads<span class="r">Admin only</span></div>
@@ -826,7 +835,9 @@ async function pageMod(main) {
     modal(`<h3>${esc(p.username)}</h3><p><span class="badge ${p.role}">${p.role}</span></p>
       <button class="sheet-btn" data-act="pin">Reset PIN</button>
       ${isAdmin() ? `<button class="sheet-btn" data-act="role">${p.role === "mod" ? "Remove Mod (make Member)" : "Make Mod"}</button>
-        <button class="sheet-btn" data-act="skip">${p.skip_checks ? "Include in activity checks &amp; polls" : "Skip activity checks &amp; polls"}</button>` : ""}
+        <button class="sheet-btn" data-act="skip">${p.skip_checks ? "Include in activity checks &amp; polls" : "Skip activity checks &amp; polls"}</button>
+        ${p.role === "admin" ? "" : `<button class="sheet-btn" data-act="comp">${p.companion ? "Turn off Companion access" : "Give Companion access"}</button>`}
+        ${p.companion || p.role === "admin" ? `<button class="sheet-btn" data-act="phone">Reset Companion phone${p.companion_device ? "" : " (none set yet)"}</button>` : ""}` : ""}
       <button class="sheet-btn danger" data-act="del">Delete account</button>
       <button class="btn block" data-act="close" style="margin-top:10px">Cancel</button>`,
       (w, close) => {
@@ -857,6 +868,24 @@ async function pageMod(main) {
           if (error) return toast(/set_skip_checks|function/i.test(errMsg(error)) ? "Needs the latest database update" : errMsg(error), true);
           toast(on ? "Skips activity checks & polls" : "Included again"); render();
         });
+        $("[data-act=comp]", w) && ($("[data-act=comp]", w).onclick = async () => {
+          close();
+          const on = !p.companion;
+          if (!(await confirmBox({ title: on ? `Give ${p.username} Companion access?` : `Turn off Companion for ${p.username}?`,
+            body: on ? "They can sign in to the Companion app with their OLC username and PIN. Their first phone becomes their phone."
+                     : "The Companion app locks for them the next time it checks. Their OLC Database access stays the same.", ok: "Confirm" }))) return;
+          const { error } = await sb.rpc("set_companion", { p_id: p.id, p_on: on });
+          if (error) return toast(errMsg(error), true);
+          toast(on ? "Companion access on" : "Companion access off"); render();
+        });
+        $("[data-act=phone]", w) && ($("[data-act=phone]", w).onclick = async () => {
+          close();
+          if (!(await confirmBox({ title: `Reset ${p.username}'s Companion phone?`,
+            body: "The next phone they sign in on becomes their phone. Their old phone locks.", ok: "Reset phone" }))) return;
+          const { error } = await sb.rpc("reset_companion_phone", { p_id: p.id });
+          if (error) return toast(errMsg(error), true);
+          toast("Phone reset"); render();
+        });
         $("[data-act=del]", w).onclick = async () => {
           close();
           if (!(await confirmBox({ title: `Delete ${p.username}?`,
@@ -868,6 +897,19 @@ async function pageMod(main) {
         };
       });
   }));
+
+  if ($("#compMinForm")) {
+    const f = $("#compMinForm");
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = f.b.value.trim();
+      if (!/^\d{1,6}$/.test(v)) return toast("Enter a build number, or 0", true);
+      const { error } = await sb.rpc("set_companion_min_build", { p_build: Number(v) });
+      if (error) return toast(errMsg(error), true);
+      S.settings.companion_min_build = Number(v); f.b.blur();
+      toast(Number(v) ? `Builds older than ${v} must update` : "No minimum build");
+    };
+  }
 
   // home screen
   if ($("#leadAmtForm")) {
