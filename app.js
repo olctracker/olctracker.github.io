@@ -470,6 +470,13 @@ async function pageHome(main) {
 
     ${poll ? pollCard(poll, votes) : ""}
 
+    ${S.profile.companion || isAdmin() ? `
+    <div class="card compact">
+      <div class="card-h">HackEX2 Companion<span class="r" id="compBuild"></span></div>
+      <div class="row"><div class="grow small muted">Android app. Download it on your phone, open it, then sign in with this username and PIN.</div>
+      <button class="btn sm primary" id="compDl">Download</button></div>
+    </div>` : ""}
+
     ${!standalone && !dismissed ? `
     <div class="card accent" id="installCard">
       <div class="card-h">Install the app<span class="r"><button class="icon-btn" id="dismissInstall" style="width:32px;height:32px" aria-label="Dismiss">${ICON.x}</button></span></div>
@@ -497,6 +504,23 @@ async function pageHome(main) {
     render();
   });
   if (poll) bindPoll(poll);
+  if ($("#compDl")) {
+    sb.from("companion_release").select("build,path").eq("id", 1).maybeSingle().then(({ data }) => {
+      if (data && $("#compBuild")) $("#compBuild").textContent = `build ${data.build}`;
+    });
+    $("#compDl").onclick = async (e) => {
+      const btn = e.currentTarget;
+      btnBusy(btn, true, "…");
+      try {
+        const { data: rel, error } = await sb.from("companion_release").select("build,path").eq("id", 1).maybeSingle();
+        if (error || !rel) throw new Error(error ? errMsg(error) : "No build uploaded yet");
+        const { data: link, error: e2 } = await sb.storage.from("companion").createSignedUrl(rel.path, 600, { download: `HackEX2-Companion-${rel.build}.apk` });
+        if (e2 || !link) throw new Error(e2 ? errMsg(e2) : "Couldn't make a download link");
+        location.href = link.signedUrl;
+      } catch (err) { toast(err.message || String(err), true); }
+      finally { btnBusy(btn, false); }
+    };
+  }
   startClock();
 }
 
