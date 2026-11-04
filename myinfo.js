@@ -371,6 +371,16 @@ function soonIps(d, targets, rounds = 3) {
   return [...out].map(([ip, fw]) => ({ ip, fw })).sort((a, b) => a.fw - b.fw || a.ip.localeCompare(b.ip));
 }
 
+/* "Already bypassed" check marks for the soon list. Kept on this phone, per account,
+   until the member resets them (their bypasses stay until they clear them in the game). */
+const soonKey = () => `olc-soon-done-${O().S.profile?.id || ""}`;
+function soonDone() {
+  try { return new Set(JSON.parse(localStorage.getItem(soonKey()) || "[]")); } catch (e) { return new Set(); }
+}
+function saveSoonDone(set) {
+  try { localStorage.setItem(soonKey(), JSON.stringify([...set])); return true; } catch (e) { return false; }
+}
+
 PAGES.leveling = async function pageLeveling(main) {
   const { esc, $$, toast, errMsg, render, modal, $ } = O();
   const { IC, copy } = G();
@@ -388,7 +398,10 @@ PAGES.leveling = async function pageLeveling(main) {
   let targets = (await loadTargets()).filter((t) => t.ip !== d.ip && G().isFullIp(t.ip));
   targets = await G().dropCrew(targets, (t) => [t.ip]);
   const g = buildGuide(d, targets);
-  const soon = soonIps(d, targets);
+  const done = soonDone();
+  const soonAll = soonIps(d, targets);
+  const soon = soonAll.filter((x) => !done.has(x.ip));
+  const hidden = soonAll.length - soon.length;
   const skipNote = (s) => s.length ? `<div class="skip">skips ${s.length} level${s.length === 1 ? "" : "s"} (${s.join(", ")})</div>` : "";
 
   main.innerHTML = `
@@ -425,13 +438,15 @@ PAGES.leveling = async function pageLeveling(main) {
       <p class="small muted" style="margin:0">Add ${esc(g.unknown.map((p) => p.name).join(", "))} in <a href="#/device">My Device</a> to include ${g.unknown.length === 1 ? "it" : "them"}.</p></div>` : ""}
     <div class="card">
       <div class="card-h">IPs needing to be bypassed soon<span class="r">${soon.length} IP${soon.length === 1 ? "" : "s"}</span></div>
+      <button class="btn block ghost" data-soonreset style="margin-bottom:10px" ${done.size ? "" : "disabled"}>Reset check marks${done.size ? ` (${done.size})` : ""}</button>
       ${soon.length ? `<button class="btn block" data-copyall style="margin-bottom:10px">${IC.copy} Copy all ${soon.length}</button>
         ${soon.map((x) => `<div class="row soon-row">
           <div class="fw-pill mono ${x.fw > g.limit ? "over" : ""}"><small>FW</small>${x.fw}</div>
           <a class="grow mono ip-row" href="#/ip/${encodeURIComponent(x.ip)}">${esc(x.ip)}</a>
-          <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${IC.copy}</button></div>`).join("")}`
-        : `<div class="empty">Nothing to plan yet.</div>`}
-      <div class="hint">Every IP the guide would pick for the next 3 levels of each app (up to Keygen ${d.keygen}), lowest firewall first. Bypass them ahead of time.</div>
+          <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${IC.copy}</button>
+          <button class="btn sm" data-soondone="${esc(x.ip)}" aria-label="Already bypassed">${IC.check}</button></div>`).join("")}`
+        : `<div class="empty">${hidden ? "All of them are checked off as bypassed." : "Nothing to plan yet."}</div>`}
+      <div class="hint">Every IP the guide would pick for the next 3 levels of each app (up to Keygen ${d.keygen}), lowest firewall first. Bypass them ahead of time, then tap ✓ so they stop showing here.${hidden ? ` ${hidden} checked off.` : ""} Check marks stay until you reset them.</div>
     </div>`;
 
   $$("[data-copy]", main).forEach((b) => (b.onclick = () => copy(b.dataset.copy)));
@@ -441,7 +456,18 @@ PAGES.leveling = async function pageLeveling(main) {
     try { await navigator.clipboard.writeText(text); toast(`Copied ${soon.length} IP${soon.length === 1 ? "" : "s"}`); }
     catch (e) { copy(text); }
   };
+  $$("[data-soondone]", main).forEach((b) => (b.onclick = () => {
+    const set = soonDone(); set.add(b.dataset.soondone);
+    if (!saveSoonDone(set)) return toast("Couldn't save on this phone", true);
+    toast(`${b.dataset.soondone} checked off`); render();
+  }));
+  const reset = $("[data-soonreset]", main);
+  if (reset) reset.onclick = async () => {
+    if (!(await O().confirmBox({ title: "Reset check marks?", body: `All ${done.size} checked IP${done.size === 1 ? "" : "s"} come back to the soon list. Use this after you clear your bypasses in the game.`, ok: "Reset" }))) return;
+    saveSoonDone(new Set()); toast("Check marks reset"); render();
+  };
   const rows = new Map(g.cards.flatMap((c) => c.rows.map((r) => [r.p.key, r])));
+  const ipFor = new Map(g.cards.flatMap((c) => c.rows.map((r) => [r.p.key, c.ip])));
   $$("[data-done]", main).forEach((b) => (b.onclick = async () => {
     const r = rows.get(b.dataset.done);
     let lvl = r.lvl;
@@ -453,7 +479,13 @@ PAGES.leveling = async function pageLeveling(main) {
         (w, close) => $$("[data-l]", w).forEach((x) => (x.onclick = () => { close(); done(x.dataset.l ? Number(x.dataset.l) : null); }))));
       if (lvl == null) return;
     }
-    try { await saveDevice({ [r.p.key]: lvl }); toast(`${r.p.name} → ${lvl}`); render(); }
+    // the IP used is bypassed now, so it leaves the soon list
+    const used = r.safer && lvl === r.safer.lvl && lvl !== r.lvl ? r.safer.ip : ipFor.get(r.p.key);
+    try {
+      await saveDevice({ [r.p.key]: lvl });
+      if (used) { const set = soonDone(); set.add(used); saveSoonDone(set); }
+      toast(`${r.p.name} → ${lvl}`); render();
+    }
     catch (e) { toast(errMsg(e), true); }
   }));
 };
