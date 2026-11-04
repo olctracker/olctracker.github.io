@@ -21,7 +21,7 @@ async function loadAll() {
   const cols = ["ip", "status", "player_level", "firewall", "account_name", "crew_name", ...ROWS.map((r) => r[0])].join(",");
   const out = [];
   for (let from = 0; from < 50000; from += 1000) {
-    const { data, error } = await sb.from("targets").select(cols).eq("scrambled", false).order("ip").range(from, from + 999);
+    const { data, error } = await sb.from("targets").select(cols).eq("scrambled", false).eq("scanned_only", false).order("ip").range(from, from + 999);
     if (error) throw error;
     out.push(...(data || []));
     if (!data || data.length < 1000) break;

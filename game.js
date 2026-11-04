@@ -53,6 +53,8 @@ function badges(t) {
   if (!t) return `<span class="badge">not saved</span>`;
   let h = `<span class="badge st-${e(t.status)}">${e(t.status)}</span>`;
   if (t.scrambled) h += ` <span class="badge st-scr">scrambled</span>`;
+  if (t.scanned_only) h += ` <span class="badge">scanned only</span>`;
+  if (t.invalid_flagged_at && !t.scrambled) h += ` <span class="badge st-scr">flagged invalid</span>`;
   if (t.in_pool) h += ` <span class="badge st-pool">spam list</span>`;
   return h;
 }
@@ -746,7 +748,8 @@ PAGES.software = async function pageSoftware(main) {
     sessionStorage.setItem("olc-sw-search", JSON.stringify({ prog, lvl }));
     results.innerHTML = `<div class="empty">Searching…</div>`;
     const n = Number(lvl);
-    let q = sb.from("targets").select("*").eq("scrambled", false);   // scrambled IPs can't be found in the game
+    // scrambled IPs can't be found in the game; scanned-only IPs have nothing but an IP/FW yet
+    let q = sb.from("targets").select("*").eq("scrambled", false).eq("scanned_only", false);
     q = prog === "all" ? q.or(PROGRAMS.map((p) => `${p.key}.eq.${n}`).join(",")) : q.eq(prog, n);
     const { data, error } = await q.limit(300);
     if (error) { results.innerHTML = `<div class="err">${esc(errMsg(error))}</div>`; return; }
@@ -776,7 +779,7 @@ PAGES.software = async function pageSoftware(main) {
   };
   $("[data-add]", main).onclick = () => addIp();
 
-  const recent = await dropCrew((await sb.from("targets").select("*").order("updated_at", { ascending: false }).limit(15)).data || [], (t) => [t.ip]);
+  const recent = await dropCrew((await sb.from("targets").select("*").eq("scanned_only", false).order("updated_at", { ascending: false }).limit(15)).data || [], (t) => [t.ip]);
   const ul = $("[data-recent]", main);
   if (!ul) return;
   ul.innerHTML = (recent || []).length ? recent.map((t) => targetRow(t)).join("") : `<li class="empty">Nothing saved yet.</li>`;

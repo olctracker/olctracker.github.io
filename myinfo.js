@@ -302,7 +302,7 @@ async function loadTargets() {
   const cols = ["ip", "firewall", "scrambled", ...G().PROGRAMS.map((p) => p.key)].join(",");
   const out = [];
   for (let from = 0; from < 20000; from += 1000) {
-    const { data, error } = await sb.from("targets").select(cols).not("firewall", "is", null).eq("scrambled", false)
+    const { data, error } = await sb.from("targets").select(cols).not("firewall", "is", null).eq("scrambled", false).eq("scanned_only", false)
       .order("ip").range(from, from + 999);
     if (error) throw error;
     out.push(...(data || []));
