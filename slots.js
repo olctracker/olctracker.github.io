@@ -330,8 +330,27 @@ PAGES.siphon = async function pageSiphon(main) {
   const { sb, S, esc, $, $$, toast, errMsg, confirmBox, render, fmtDate } = O();
   const uid = S.profile.id;
   const { data } = await sb.from("siphon_slots").select("*").eq("user_id", uid);
-  const list = (data || []).sort((a, b) => (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
+  // Show: total crypto or per 1%. Over: overall or average a day (amount ÷ days placed,
+  // at least 1 day so a brand-new siphon isn't inflated). Remembered on this phone.
+  let view = { show: "total", over: "all" };
+  try { view = { ...view, ...JSON.parse(localStorage.getItem("olc-siphon-view") || "{}") }; } catch (e) {}
+  const metric = (x) => {
+    const amt = Number(x.siphoned) || 0, pct = Number(x.pct), h = ageHours(x.age);
+    let v = amt;
+    if (view.show === "pct") { if (!(pct > 0)) return null; v /= pct; }
+    if (view.over === "avg") { if (h === null) return null; v /= Math.max(h / 24, 1); }
+    return v;
+  };
+  const list = (data || []).map((x) => ({ ...x, m: metric(x) }))
+    .sort((a, b) => (b.m ?? -1) - (a.m ?? -1) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
   const total = list.reduce((s, x) => s + (Number(x.siphoned) || 0), 0);
+  const unit = view.show === "pct" ? (view.over === "avg" ? "per 1% / day" : "per 1%") : (view.over === "avg" ? "/ day" : "total");
+  const how = {
+    "total all": "Most siphoned in total, highest first.",
+    "total avg": "Total ÷ days on the list. Finds new siphons that are earning fast.",
+    "pct all": "Total ÷ %. What each 1% has earned. Raising the % on a high one pays the most.",
+    "pct avg": "Total ÷ % ÷ days. What each 1% earns a day, the fairest way to compare old and new siphons."
+  }[view.show + " " + view.over];
 
   main.innerHTML = `
     <div class="tiles">
@@ -346,12 +365,22 @@ PAGES.siphon = async function pageSiphon(main) {
     </div>
 
     <div class="card">
-      <div class="card-h">My siphons<span class="r">highest first</span></div>
-      ${list.length ? `<ul class="list">${list.map((x) => `
+      <div class="card-h">My siphons<span class="r">${unit}</span></div>
+      ${list.length ? `
+        <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">SHOW</div>
+        <div class="seg" style="margin-bottom:10px">
+          <button data-vshow="total" class="${view.show === "total" ? "on" : ""}">Total crypto</button>
+          <button data-vshow="pct" class="${view.show === "pct" ? "on" : ""}">Per 1%</button></div>
+        <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">OVER</div>
+        <div class="seg" style="margin-bottom:8px">
+          <button data-vover="all" class="${view.over === "all" ? "on" : ""}">Overall</button>
+          <button data-vover="avg" class="${view.over === "avg" ? "on" : ""}">Avg / day</button></div>
+        <div class="hint" style="margin:0 2px 10px">${how}</div>
+        <ul class="list">${list.map((x) => `
         <li><div class="lv-pill mono"><small>LV</small>${x.level ?? "—"}</div>
           <div class="grow"><span class="mono ip-row">${esc(x.ip)}</span>
-            <div class="tiny muted">${x.pct != null ? `${Number(x.pct)}%` : "—"} · ${esc(x.age ? x.age + " ago" : "—")} · ${fmtDate(x.updated_at)}</div></div>
-          <b class="mono gain">${fmt(x.siphoned)}</b>
+            <div class="tiny muted">${x.pct != null ? `${Number(x.pct)}%` : "—"} · ${esc(x.age ? x.age + " ago" : "—")} · ${fmtDate(x.updated_at)}${unit !== "total" ? ` · ${fmt(x.siphoned)} total` : ""}</div></div>
+          <div style="text-align:right"><b class="mono gain" style="display:block">${x.m == null ? "—" : fmt(x.m)}</b>${unit !== "total" ? `<span class="tiny mono muted">${unit}</span>` : ""}</div>
           <button class="icon-btn" data-del="${esc(x.ip)}" aria-label="Remove">×</button></li>`).join("")}</ul>`
         : `<div class="empty">Nothing saved yet. Paste your siphon list above.</div>`}
     </div>
@@ -362,6 +391,9 @@ PAGES.siphon = async function pageSiphon(main) {
       <button class="btn danger block" data-reboot>Reset siphon list</button>
     </div>` : ""}`;
 
+  const setView = (k, v) => { view[k] = v; try { localStorage.setItem("olc-siphon-view", JSON.stringify(view)); } catch (e) {} render(); };
+  $$("[data-vshow]", main).forEach((b) => (b.onclick = () => setView("show", b.dataset.vshow)));
+  $$("[data-vover]", main).forEach((b) => (b.onclick = () => setView("over", b.dataset.vover)));
   const ta = $("textarea", main), prev = $("[data-prev]", main), save = $("[data-save]", main);
   let parsed = [];
   ta.addEventListener("input", () => {
