@@ -137,6 +137,7 @@ const ICON = {
   coverage: I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5l2 2 4-4"/>'),
   calc: I('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 18h8"/>'),
   builder: I('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
+  mail: I('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   formulas: I('<path d="M5 4h14v16H5z"/><path d="M8 8h3M9.5 6.5v3M13 8h3M8 14l3 3M11 14l-3 3M13 15.5h3"/>'),
   reboot: I('<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.1L4 10"/>')
 };
@@ -174,7 +175,9 @@ const NAV = [
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" },
   { id: "companion", label: "Companion", icon: "device", companionOnly: true },
-  { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true }
+  { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true },
+  { id: "messages", label: "Messages", icon: "mail", adminOnly: true },
+  { id: "contact", label: "Contact Admin", icon: "mail", notAdmin: true }
 ];
 
 const SOON_TEXT = {
@@ -204,6 +207,7 @@ function routeFromHash() {
   if (!item) return "home";
   if (item.modOnly && !isMod()) return "home";
   if (item.adminOnly && !isAdmin()) return "home";
+  if (item.notAdmin && isAdmin()) return "messages";
   if (item.companionOnly && !hasCompanion()) return "home";
   return r;
 }
@@ -261,6 +265,10 @@ async function loadPendingCount() {
   ]);
   S.pendingCount = a.count || 0;
   S.reviewCount = (b.count || 0) + (c.data || []).length;
+  if (isAdmin()) {
+    const m = await sb.from("admin_messages").select("id", { count: "exact", head: true });
+    S.msgCount = m.error ? 0 : m.count || 0;           // 0 until the v1.26 update is run
+  }
 }
 
 /* =========================================================
@@ -403,11 +411,11 @@ function buildShell() {
 }
 
 function renderNav() {
-  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()) && !(n.companionOnly && !hasCompanion()));
+  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()) && !(n.notAdmin && isAdmin()) && !(n.companionOnly && !hasCompanion()));
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
     : `<a href="#/${n.id}" class="${(S.route === "ip" || S.route === "add" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
-        ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.id === "review" && S.reviewCount ? `<span class="count">${S.reviewCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
+        ${n.id === "mod" && S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : n.id === "review" && S.reviewCount ? `<span class="count">${S.reviewCount}</span>` : n.id === "messages" && S.msgCount ? `<span class="count">${S.msgCount}</span>` : n.soon ? `<span class="soon">SOON</span>` : ""}</a>`
   ).join("");
   $$("#nav a").forEach((a) => (a.onclick = closeDrawer));
   $("#drawerName").textContent = S.settings.app_name;

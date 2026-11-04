@@ -635,3 +635,10 @@ details > summary.card-h::-webkit-details-marker { display: none; }
   border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); user-select: text; -webkit-user-select: text; }
 .soon-row { padding: 8px 0; border-top: 1px solid var(--line); }
 .soon-row:first-of-type { border-top: 0; }
+
+/* Contact Admin / Messages */
+.msg-peek { margin-top: 4px; color: var(--dim); }
+.msg-thread { cursor: pointer; }
+.count-pill { min-width: 26px; padding: 2px 8px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-size: 12px; text-align: center; }
+.msg-body { font-size: 14px; line-height: 1.45; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: none; overflow: hidden; }
+.msg-body.clip { max-height: 260px; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
