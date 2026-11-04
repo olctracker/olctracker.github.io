@@ -512,7 +512,7 @@ async function pageCompanion(main) {
   main.innerHTML = `
     <div class="card">
       <div class="card-h">HackEX2 Companion${rel ? `<span class="r">build ${esc(rel.build)}</span>` : ""}</div>
-      <p class="small muted" style="margin-top:0">The Android macro app. On your Android phone: tap Download, open the file and tap Install (it updates the app if you already have it; your macros stay). Then sign in to the app with this username and PIN.</p>
+      <p class="small muted" style="margin-top:0">The Android Companion. On your Android phone: tap Download, open the file and tap Install (it updates the app if you already have it; your macros stay). Then sign in to the app with this username and PIN.</p>
       <button class="btn primary block" id="compDl" ${rel ? "" : "disabled"}>${rel ? "Download" : "No build uploaded yet"}</button>
       <div class="hint">After this, updates come through the app's own update card. ${rel ? `Uploaded ${fmtDateTime(rel.updated_at)}.` : ""}</div>
     </div>`;

@@ -88,7 +88,7 @@ PAGES.top = async function pageTop(main) {
   const { sb, S, esc, $, $$, errMsg, modal, isAdmin } = O();
   if (!isAdmin()) { main.innerHTML = `<div class="card"><div class="empty">Admin only.</div></div>`; return; }
   const st = (() => { try { return JSON.parse(sessionStorage.getItem("olc-top") || "{}"); } catch (e) { return {}; } })();
-  let tab = st.tab || "crypto", period = st.period || "day", sort = st.sort || "total", ssort = st.ssort || "amount";
+  let tab = st.tab || "crypto", period = st.period || "day", sort = st.sort || "total", ssort = st.ssort === "pct" ? "avg" : (st.ssort || "amount");
   const keep = () => { try { sessionStorage.setItem("olc-top", JSON.stringify({ tab, period, sort, ssort })); } catch (e) {} };
   const cache = {};
   let siphon = null;
@@ -191,13 +191,15 @@ PAGES.top = async function pageTop(main) {
       if (error) return fail(error);
       siphon = (data || []).map((x) => {
         const h = ageHours(x.age);
-        return { ...x, placed: h === null ? null : new Date(x.updated_at).getTime() - h * 3600e3 };
+        // Average a day: total siphoned ÷ days since it was placed (at least 1 day, so a brand-new entry isn't inflated)
+        const avg = h === null || x.siphoned == null ? null : Number(x.siphoned) / Math.max(h / 24, 1);
+        return { ...x, avg, placed: h === null ? null : new Date(x.updated_at).getTime() - h * 3600e3 };
       });
     }
     if (tab !== "siphon") return;
     const from = periodStart(period);
     const rows = siphon.filter((x) => period === "all" || (x.placed !== null && x.placed >= from))
-      .sort((a, b) => ssort === "pct" ? (Number(b.pct) || 0) - (Number(a.pct) || 0) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0)
+      .sort((a, b) => ssort === "avg" ? (b.avg ?? -1) - (a.avg ?? -1) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0)
         : (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0))
       .slice(0, 25);
     await loadSw(rows.map((x) => x.ip));
@@ -212,15 +214,15 @@ PAGES.top = async function pageTop(main) {
         <div class="card-h">Top siphon entries<span class="r">${pname()}</span></div>
         <div class="chips" style="margin-bottom:6px">
           <button class="chip ${ssort === "amount" ? "on" : ""}" data-ss="amount">By amount</button>
-          <button class="chip ${ssort === "pct" ? "on" : ""}" data-ss="pct">By %</button>
+          <button class="chip ${ssort === "avg" ? "on" : ""}" data-ss="avg">Avg / day</button>
         </div>
         ${rows.length ? `<ol class="rank">${rows.map((x, i) => `
           <li><span class="rk mono">${i + 1}</span>
             <div class="grow">${G().ipText(x.ip)}${swLine(x.ip)}
-              <div class="tiny muted">LV ${x.level ?? "—"} · ${x.pct != null ? Number(x.pct) + "%" : "—"} · ${esc(x.age ? x.age + " ago" : "—")}</div>
+              <div class="tiny muted">LV ${x.level ?? "—"} · ${x.pct != null ? Number(x.pct) + "%" : "—"} · ${esc(x.age ? x.age + " ago" : "—")}${ssort === "avg" ? ` · ${fmt(x.siphoned)} total` : ""}</div>
               <div class="tiny muted">by ${esc(x.username)}</div></div>
             <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
-            <b class="mono gain">${ssort === "pct" ? (x.pct != null ? Number(x.pct) + "%" : "—") : fmt(x.siphoned)}</b></li>`).join("")}</ol>`
+            <b class="mono gain">${ssort === "avg" ? (x.avg != null ? fmt(Math.round(x.avg)) + "/day" : "—") : fmt(x.siphoned)}</b></li>`).join("")}</ol>`
           : `<div class="empty">No siphon entries ${pname()}.</div>`}
       </div>`;
     bind();
