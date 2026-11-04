@@ -30,6 +30,7 @@ const emailFor = (u) => `${u.trim().toLowerCase()}@${CFG.emailDomain}`;
 const pwFor = (pin) => `olc#${pin}#pin`;
 const isMod = () => S.profile && ["mod", "admin"].includes(S.profile.role);
 const isAdmin = () => S.profile && S.profile.role === "admin";
+const hasCompanion = () => S.profile && (S.profile.companion || S.profile.role === "admin");
 const fmtDate = (d) => new Date(d).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 const fmtDateTime = (d) => new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const logo = () => S.settings.logo_url || "icon-512.png";
@@ -172,6 +173,7 @@ const NAV = [
   { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" },
+  { id: "companion", label: "Companion", icon: "device", companionOnly: true },
   { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true }
 ];
 
@@ -202,6 +204,7 @@ function routeFromHash() {
   if (!item) return "home";
   if (item.modOnly && !isMod()) return "home";
   if (item.adminOnly && !isAdmin()) return "home";
+  if (item.companionOnly && !hasCompanion()) return "home";
   return r;
 }
 
@@ -385,7 +388,7 @@ function buildShell() {
 }
 
 function renderNav() {
-  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()));
+  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()) && !(n.companionOnly && !hasCompanion()));
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
     : `<a href="#/${n.id}" class="${(S.route === "ip" || S.route === "add" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
@@ -412,6 +415,7 @@ async function render() {
   try {
     if (S.route === "home") await pageHome(main);
     else if (S.route === "settings") await pageSettings(main);
+    else if (S.route === "companion") await pageCompanion(main);
     else if (S.route === "mod") await pageMod(main);
     else if (S.route === "review") await pageReview(main);
     else if (window.OLC_PAGES && window.OLC_PAGES[S.route]) await window.OLC_PAGES[S.route](main, S.arg);
@@ -470,13 +474,6 @@ async function pageHome(main) {
 
     ${poll ? pollCard(poll, votes) : ""}
 
-    ${S.profile.companion || isAdmin() ? `
-    <div class="card compact">
-      <div class="card-h">HackEX2 Companion<span class="r" id="compBuild"></span></div>
-      <div class="row"><div class="grow small muted">Android app. Download it on your phone, open it, then sign in with this username and PIN.</div>
-      <button class="btn sm primary" id="compDl">Download</button></div>
-    </div>` : ""}
-
     ${!standalone && !dismissed ? `
     <div class="card accent" id="installCard">
       <div class="card-h">Install the app<span class="r"><button class="icon-btn" id="dismissInstall" style="width:32px;height:32px" aria-label="Dismiss">${ICON.x}</button></span></div>
@@ -504,10 +501,22 @@ async function pageHome(main) {
     render();
   });
   if (poll) bindPoll(poll);
-  if ($("#compDl")) {
-    sb.from("companion_release").select("build,path").eq("id", 1).maybeSingle().then(({ data }) => {
-      if (data && $("#compBuild")) $("#compBuild").textContent = `build ${data.build}`;
-    });
+  startClock();
+}
+
+/* =========================================================
+   COMPANION (accounts with Companion access only)
+   ========================================================= */
+async function pageCompanion(main) {
+  const { data: rel } = await sb.from("companion_release").select("build,updated_at").eq("id", 1).maybeSingle();
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-h">HackEX2 Companion${rel ? `<span class="r">build ${esc(rel.build)}</span>` : ""}</div>
+      <p class="small muted" style="margin-top:0">The Android macro app. On your Android phone: tap Download, open the file and tap Install (it updates the app if you already have it; your macros stay). Then sign in to the app with this username and PIN.</p>
+      <button class="btn primary block" id="compDl" ${rel ? "" : "disabled"}>${rel ? "Download" : "No build uploaded yet"}</button>
+      <div class="hint">After this, updates come through the app's own update card. ${rel ? `Uploaded ${fmtDateTime(rel.updated_at)}.` : ""}</div>
+    </div>`;
+  {
     $("#compDl").onclick = async (e) => {
       const btn = e.currentTarget;
       btnBusy(btn, true, "…");
@@ -521,7 +530,6 @@ async function pageHome(main) {
       finally { btnBusy(btn, false); }
     };
   }
-  startClock();
 }
 
 function pollCard(poll, votes) {
