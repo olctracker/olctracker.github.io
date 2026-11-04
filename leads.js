@@ -125,18 +125,23 @@ PAGES.top = async function pageTop(main) {
   };
   const fail = (e) => { main.innerHTML = head() + (missingFn(e) ? needUpdate() : `<div class="card"><div class="card-h">Error</div><p>${esc(errMsg(e))}</p></div>`); bind(); };
 
+  const fwOf = (ip) => { const t = sw.get(ip); return t && t.firewall != null ? Number(t.firewall) : Infinity; };
+
   async function drawCrypto() {
-    const key = period + "|" + sort;
+    const key = period + "|" + (sort === "fw" ? "total" : sort);
     if (!cache[key]) {
       main.innerHTML = head() + `<div class="loading">Loading</div>`; bind();
-      const { data, error } = await sb.rpc("server_top_crypto", { p_period: period, p_sort: sort });
+      const { data, error } = await sb.rpc("server_top_crypto", { p_period: period, p_sort: sort === "fw" ? "total" : sort });
       if (error) return fail(error);
       cache[key] = data || [];
     }
-    if (tab !== "crypto" || key !== period + "|" + sort) return;
-    const rows = cache[key];
+    const keyNow = () => period + "|" + (sort === "fw" ? "total" : sort);
+    if (tab !== "crypto" || key !== keyNow()) return;
+    let rows = cache[key];
     await loadSw(rows.filter((r) => r.kind === "ip").map((r) => r.target));
-    if (tab !== "crypto" || key !== period + "|" + sort) return;
+    if (tab !== "crypto" || key !== keyNow()) return;
+    // By FW: the same top 25 (by total), lowest firewall first; no FW saved goes last
+    if (sort === "fw") rows = [...rows].sort((a, b) => fwOf(a.target) - fwOf(b.target) || Number(b.total || 0) - Number(a.total || 0));
     const sum = rows.reduce((s, r) => s + Number(r.total || 0), 0);
     const name = (r) => r.kind === "ip" ? G().ipText(r.target) : `<span class="mono">${esc(r.target)}</span> <span class="badge">no IP</span>`;
     const who = (r) => {
@@ -154,6 +159,7 @@ PAGES.top = async function pageTop(main) {
         <div class="chips" style="margin-bottom:6px">
           <button class="chip ${sort === "total" ? "on" : ""}" data-s="total">By total</button>
           <button class="chip ${sort === "avg" ? "on" : ""}" data-s="avg">By average</button>
+          <button class="chip ${sort === "fw" ? "on" : ""}" data-s="fw">By FW</button>
         </div>
         ${rows.length ? `<ol class="rank">${rows.map((r, i) => `
           <li data-r="${i}" class="tap"><span class="rk mono">${i + 1}</span>
@@ -204,6 +210,8 @@ PAGES.top = async function pageTop(main) {
       .slice(0, 25);
     await loadSw(rows.map((x) => x.ip));
     if (tab !== "siphon") return;
+    // By FW: the same top 25 (by amount), lowest firewall first; no FW saved goes last
+    if (ssort === "fw") rows.sort((a, b) => fwOf(a.ip) - fwOf(b.ip) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
     const sum = rows.reduce((s, x) => s + (Number(x.siphoned) || 0), 0);
     main.innerHTML = head() + `
       <div class="tiles">
@@ -215,6 +223,7 @@ PAGES.top = async function pageTop(main) {
         <div class="chips" style="margin-bottom:6px">
           <button class="chip ${ssort === "amount" ? "on" : ""}" data-ss="amount">By amount</button>
           <button class="chip ${ssort === "avg" ? "on" : ""}" data-ss="avg">Avg / day</button>
+          <button class="chip ${ssort === "fw" ? "on" : ""}" data-ss="fw">By FW</button>
         </div>
         ${rows.length ? `<ol class="rank">${rows.map((x, i) => `
           <li><span class="rk mono">${i + 1}</span>
