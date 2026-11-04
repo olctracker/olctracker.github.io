@@ -54,7 +54,6 @@ function badges(t) {
   let h = `<span class="badge st-${e(t.status)}">${e(t.status)}</span>`;
   if (t.scrambled) h += ` <span class="badge st-scr">scrambled</span>`;
   if (t.scanned_only) h += ` <span class="badge">scanned only</span>`;
-  if (t.invalid_flagged_at && !t.scrambled) h += ` <span class="badge st-scr">flagged invalid</span>`;
   if (t.in_pool) h += ` <span class="badge st-pool">spam list</span>`;
   return h;
 }
