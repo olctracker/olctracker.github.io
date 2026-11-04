@@ -237,15 +237,30 @@ async function loadProfile() {
   S.profile = data || null;
   if (S.profile) applyTheme(S.profile.theme);
 }
+/* Open 100/hr spam reports, leaving out IPs marked scrambled since they were reported
+   (a scrambled IP can't be found in the game, so there's nothing to check). */
+async function openSpamReports(limit = 100) {
+  const { data, error } = await sb.from("possible_spam").select("*").eq("dismissed", false).order("per_hour", { ascending: false }).limit(limit);
+  if (error) return { data: [], error };
+  const list = data || [];
+  if (!list.length) return { data: list, error: null };
+  const scr = new Set();
+  const ips = list.map((p) => p.ip);
+  for (let i = 0; i < ips.length; i += 150) {
+    const { data: t } = await sb.from("targets").select("ip").eq("scrambled", true).in("ip", ips.slice(i, i + 150));
+    (t || []).forEach((x) => scr.add(x.ip));
+  }
+  return { data: list.filter((p) => !scr.has(p.ip)), error: null };
+}
 async function loadPendingCount() {
   if (!isMod()) { S.pendingCount = 0; S.reviewCount = 0; return; }
   const [a, b, c] = await Promise.all([
     sb.from("profiles").select("id", { count: "exact", head: true }).eq("approved", false),
     sb.from("flags").select("id", { count: "exact", head: true }).eq("resolved", false),
-    sb.from("possible_spam").select("ip", { count: "exact", head: true }).eq("dismissed", false)
+    openSpamReports(1000)
   ]);
   S.pendingCount = a.count || 0;
-  S.reviewCount = (b.count || 0) + (c.count || 0);
+  S.reviewCount = (b.count || 0) + (c.data || []).length;
 }
 
 /* =========================================================
@@ -1071,7 +1086,7 @@ async function pageMod(main) {
 async function pageReview(main) {
   const [flagR, pspamR] = await Promise.all([
     sb.from("flags").select("*").eq("resolved", false).order("created_at", { ascending: false }).limit(200),
-    sb.from("possible_spam").select("*").eq("dismissed", false).order("per_hour", { ascending: false }).limit(100)
+    openSpamReports(100)
   ]);
   const flags = flagR.data || [], pspam = pspamR.data || [];
   main.innerHTML = `
