@@ -7,7 +7,7 @@
    - Saved IPs keep their status, except: a changed software level → Active.
    - Blank cells never erase saved values. Imports never touch the spam list.
    - If Firewall and firewall_level disagree, firewall_level wins (row is noted).
-   - Rows still missing FW or level go to the Mods' review queue.
+   - Rows missing FW or level are still imported (no Mod Review): fill them in later.
    - Crew devices are left out.
    ========================================================= */
 (() => {
@@ -192,21 +192,8 @@ async function runImport(list, progress) {
       progress(`Importing ${done}/${todo.length}…`);
     }
   }
-  // still missing FW or level → Mods' review queue (skip IPs that already have an open import flag)
-  const incomplete = todo.filter((r) => r.missing.length);
-  let flagged = 0;
-  for (const c of chunks(incomplete, 150)) {
-    const { data: open } = await sb.from("flags").select("ip,note").eq("resolved", false).in("ip", c.map((r) => r.ip));
-    const already = new Set((open || []).filter((f) => /^Imported/i.test(f.note || "")).map((f) => f.ip));
-    const add = c.filter((r) => !already.has(r.ip)).map((r) => ({
-      ip: r.ip, kind: "incorrect", note: `Imported without ${r.missing.join(" and ")}. Please add it.`
-    }));
-    if (add.length) {
-      const { error } = await sb.from("flags").insert(add);
-      if (error) throw error;
-      flagged += add.length;
-    }
-  }
+  // Rows missing FW or level are imported as they are (no Mod Review flag).
+  const flagged = 0;
   return {
     added: todo.filter((r) => r.kind === "new").length,
     updated: todo.filter((r) => r.kind === "upd").length,
@@ -315,7 +302,7 @@ PAGES.import = async function pageImport(main) {
     };
     const miss = [
       ...(r.notes || []).map((n) => `! ${esc(n)}.`),
-      ...(r.missing.length ? [`! No ${esc(r.missing.join(" or "))} — imported and sent to Mod Review.`] : [])
+      ...(r.missing.length ? [`! No ${esc(r.missing.join(" or "))} yet — imported, fill it in later.`] : [])
     ].map((t) => `<div class="why" style="color:var(--warn)">${t}</div>`).join("");
     return `<div class="ir ${miss ? "miss" : ""}">
       <div class="hd"><span class="ip">${esc(r.ip)}</span>${tag}${st}</div>
@@ -353,14 +340,14 @@ PAGES.import = async function pageImport(main) {
     const show = pick.slice(0, limit);
     const total = nNew + nUpd;
     const label = total
-      ? `Import ${plural(total, "IP", "IPs")} (${[nNew && `${nNew} new`, nUpd && `${nUpd} updated`, nMiss && `${nMiss} to Mod Review`].filter(Boolean).join(", ")})`
+      ? `Import ${plural(total, "IP", "IPs")} (${[nNew && `${nNew} new`, nUpd && `${nUpd} updated`, nMiss && `${nMiss} without level/FW`].filter(Boolean).join(", ")})`
       : "Nothing to import";
     prev.innerHTML = colsCard() + `
       <div class="t5">
         <div class="tile"><div class="k">New</div><div class="v gain">${nNew}</div></div>
         <div class="tile"><div class="k">Updated</div><div class="v" style="color:var(--warn)">${nUpd}</div></div>
         <div class="tile"><div class="k">Same</div><div class="v muted">${nSame}</div></div>
-        <div class="tile"><div class="k">Missing</div><div class="v" style="color:var(--warn)">${nMiss}</div><div class="s">→ Mod Review</div></div>
+        <div class="tile"><div class="k">Missing</div><div class="v" style="color:var(--warn)">${nMiss}</div><div class="s">no level/FW yet</div></div>
         <div class="tile"><div class="k">Skipped</div><div class="v" style="color:var(--danger)">${nBad}</div><div class="s">not imported</div></div>
       </div>
       <div class="card">
@@ -388,7 +375,7 @@ PAGES.import = async function pageImport(main) {
     const act = list.filter((r) => r.status === "active").length;
     if (!(await confirmBox({
       title: label.replace(/^Import/, "Import") + "?",
-      body: `New IPs are saved as Unknown.${act ? ` ${plural(act, "saved IP", "saved IPs")} change to Active (software level changed).` : ""}${nMiss ? ` ${nMiss} with missing FW or level go to Mod Review.` : ""} Skipped rows are not saved.`,
+      body: `New IPs are saved as Unknown.${act ? ` ${plural(act, "saved IP", "saved IPs")} change to Active (software level changed).` : ""}${nMiss ? ` ${nMiss} have no FW or level yet and are imported as they are.` : ""} Skipped rows are not saved.`,
       ok: "Import"
     }))) return;
     btnBusy(btn, true, "Importing…");
