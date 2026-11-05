@@ -817,6 +817,15 @@ async function pageMod(main) {
     </div>` : ""}
 
     ${isAdmin() ? `<div class="card">
+      <div class="card-h">Activity check<span class="r">Admin only</span></div>
+      <p class="small muted" style="margin-top:0">Used by Companion's Capture profile. A level up, a rep increase or a software change sets an IP Active. A capture with none of those, when nothing has changed for this many days, sets it Inactive (never for IPs marked "removes spam"). Companion's Type IP: Activity check types profiles not checked in this many days.</p>
+      <form id="actDaysForm" class="row" style="gap:8px">
+        <input class="input mono grow" name="d" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" value="${esc(S.settings.activity_days ?? "")}" placeholder="${S.settings.activity_days == null ? "Run the v1.29 SQL file" : "7"}">
+        <button class="btn primary" type="submit">Save days</button>
+      </form>
+    </div>` : ""}
+
+    ${isAdmin() ? `<div class="card">
       <div class="card-h">Log Leads<span class="r">Admin only</span></div>
       <p class="small muted" style="margin-top:0">A visited IP goes back into a member's Log Leads and Process Leads when, after their last visit, it hacks someone in a pasted log, or a crewmate's own log shows a steal of at least this amount. One amount for everyone; members never see it.</p>
       <form id="leadAmtForm" class="row" style="gap:8px">
@@ -966,6 +975,19 @@ async function pageMod(main) {
     };
   }
 
+  if ($("#actDaysForm")) {
+    const f = $("#actDaysForm");
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = f.d.value.trim();
+      if (!/^\d{1,3}$/.test(v) || Number(v) < 1) return toast("Enter a number of days, like 7", true);
+      const { error } = await sb.from("app_settings").update({ activity_days: Number(v) }).eq("id", 1);
+      if (error) return toast(/activity_days/.test(error.message || "") ? "Run the v1.29 SQL file first" : errMsg(error), true);
+      S.settings.activity_days = Number(v); f.d.blur();
+      toast(`Activity check: ${v} day${v === "1" ? "" : "s"}`);
+    };
+  }
+
   // home screen
   if ($("#leadAmtForm")) {
     const f = $("#leadAmtForm");
@@ -1109,7 +1131,7 @@ async function pageReview(main) {
           <div class="row wrap" style="gap:6px;margin-top:8px">
             <button class="btn sm" data-copyip="${esc(f.ip)}">${ICON.copy} Copy</button>
             ${f.kind === "spam_removed" ? `<button class="btn sm primary" data-flag="${f.id}" data-do="active" data-ip="${esc(f.ip)}">Set Active</button>
-              <button class="btn sm" data-flag="${f.id}" data-do="resolve">Keep Inactive</button>`
+              <button class="btn sm" data-flag="${f.id}" data-do="keep" data-ip="${esc(f.ip)}">Keep Inactive</button>`
             : `<a class="btn sm" href="#/ip/${encodeURIComponent(f.ip)}">Open IP</a>
               <button class="btn sm primary" data-flag="${f.id}" data-do="resolve">Mark fixed</button>`}
           </div></div></li>`).join("")}</ul>`
@@ -1191,9 +1213,12 @@ async function pageReview(main) {
   $$("[data-flag]").forEach((b) => (b.onclick = async () => {
     btnBusy(b, true, "…");
     if (b.dataset.do === "active") {
-      const { error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active" }, { onConflict: "ip" });
+      let { error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active", removes_spam: true }, { onConflict: "ip" });
+      if (error && /removes_spam/.test(error.message || "")) ({ error } = await sb.from("targets").upsert({ ip: b.dataset.ip, status: "active" }, { onConflict: "ip" }));
       if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
     }
+    // Keep Inactive: the report was wrong, so the "removes spam" mark it set comes off
+    if (b.dataset.do === "keep") await sb.from("targets").update({ removes_spam: false }).eq("ip", b.dataset.ip).then(() => {}, () => {});
     const { error } = await sb.from("flags").update({ resolved: true }).eq("id", Number(b.dataset.flag));
     if (error) { btnBusy(b, false); return toast(errMsg(error), true); }
     toast("Resolved"); render();

@@ -55,6 +55,7 @@ function badges(t) {
   if (t.scrambled) h += ` <span class="badge st-scr">scrambled</span>`;
   if (t.scanned_only) h += ` <span class="badge">scanned only</span>`;
   if (t.in_pool) h += ` <span class="badge st-pool">spam list</span>`;
+  if (t.removes_spam) h += ` <span class="badge st-scr">removes spam</span>`;
   return h;
 }
 
@@ -583,11 +584,15 @@ PAGES.ip = async function pageTarget(main, ip) {
 
     ${t ? `<div class="card">
       <div class="card-h">Inactive spam list</div>
-      ${t.in_pool
+      ${t.removes_spam
+        ? `<div class="row"><span class="grow small"><b style="color:var(--danger)">Removes spam.</b> It can't go on the spam list${t.removes_spam_by ? `. Marked by <b>${esc(t.removes_spam_by)}</b>${t.removes_spam_at ? `, ${fmtDateTime(t.removes_spam_at)}` : ""}` : ""}.</span>
+           ${mod ? `<button class="btn sm" data-rsmark="off">Clear mark</button>` : ""}</div>`
+        : t.in_pool
         ? `<div class="row"><span class="grow small">On the list${t.pool_added_by ? `, added by <b>${esc(t.pool_added_by)}</b>` : ""}.</span>
            ${mod ? `<button class="btn sm danger" data-pool="off">Remove</button>` : ""}</div>`
         : `<div class="row"><span class="grow small muted">Not on the list.</span><button class="btn sm primary" data-pool="on">Add to list</button></div>
            <div class="hint">Only Inactive, not scrambled, level 25+ IPs can be on it.</div>`}
+      ${!t.removes_spam && mod ? `<button class="btn sm ghost" data-rsmark="on" style="margin-top:8px">Mark removes spam</button>` : ""}
     </div>` : ""}
 
     <div class="card">
@@ -605,6 +610,7 @@ PAGES.ip = async function pageTarget(main, ip) {
       ${PROGRAMS.filter((p) => t.sw_meta && t.sw_meta[p.key]).map((p) =>
         `<div>${esc(p.name)} — ${esc(t.sw_meta[p.key].by)}, ${fmtDateTime(t.sw_meta[p.key].at)}</div>`).join("") || `<div>No software entered yet.</div>`}
       <div>Added by ${esc(t.created_by || "—")}, ${fmtDateTime(t.created_at)} · updated by ${esc(t.updated_by || "—")}, ${fmtDateTime(t.updated_at)}</div>
+      ${t.last_checked_at || t.last_change_at ? `<div>Activity check: last checked ${t.last_checked_at ? fmtDateTime(t.last_checked_at) : "never"} · last change seen ${t.last_change_at ? fmtDateTime(t.last_change_at) : "—"}</div>` : ""}
     </div>` : ""}
     ${t && mod ? `<div class="row" style="gap:8px;margin-top:14px">
         <button class="btn danger grow" data-delip>Delete this IP</button>
@@ -648,6 +654,7 @@ PAGES.ip = async function pageTarget(main, ip) {
     const on = b.dataset.pool === "on";
     // Spam list rules: Inactive, not scrambled, player level 25+ (the database keeps them too)
     if (on) {
+      if (t?.removes_spam) return toast("This IP removes spam, so it can't go on the spam list", true);
       if (t?.scrambled) return toast("Scrambled IPs can't go on the spam list", true);
       if (t?.status === "active") return toast("Active IPs can't go on the spam list", true);
       if (!(Number(t?.player_level) >= 25)) return toast("The spam list is for level 25 and up. Save the player level first.", true);
@@ -656,6 +663,14 @@ PAGES.ip = async function pageTarget(main, ip) {
       await upsertTarget(on ? { ip, in_pool: true, status: "inactive" } : { ip, in_pool: false });
       toast(on ? "Added to spam list" : "Removed from spam list"); refresh();
     } catch (e) { toast(errMsg(e), true); }
+  }));
+  $$("[data-rsmark]", main).forEach((b) => (b.onclick = async () => {
+    const on = b.dataset.rsmark === "on";
+    if (on && !(await O().confirmBox({ title: "Mark as removing spam?", body: "It comes off the spam list and can't be added back until a Mod clears the mark.", ok: "Mark" }))) return;
+    try {
+      await upsertTarget({ ip, removes_spam: on });
+      toast(on ? "Marked: removes spam" : "Mark cleared"); refresh();
+    } catch (e) { toast(/removes_spam/.test(e.message || "") ? "Run the v1.29 SQL file first" : errMsg(e), true); }
   }));
   $("[data-scr]", main) && ($("[data-scr]", main).onclick = async () => { if (await askScrambled(ip)) refresh(); });
   $("[data-unscr]", main) && ($("[data-unscr]", main).onclick = async () => {
@@ -1021,9 +1036,9 @@ PAGES.spam = async function pageSpam(main) {
     if (await crewInfo(ip)) return (err.textContent = CREW_MSG);
     try {
       await upsertTarget({ ip, status: "inactive", firewall: Number(fw), player_level: Number(lv), in_pool: true });
-      const { data: t } = await sb.from("targets").select("status,scrambled,in_pool").eq("ip", ip).maybeSingle();
+      const { data: t } = await sb.from("targets").select("*").eq("ip", ip).maybeSingle();
       toast(t && !t.in_pool
-        ? (t.scrambled ? "Not added: this IP is scrambled" : t.status === "active" ? "Not added: this IP is marked Active. Flag it if that's wrong." : "Not added: it doesn't meet the spam list rules")
+        ? (t.removes_spam ? "Not added: this IP removes spam" : t.scrambled ? "Not added: this IP is scrambled" : t.status === "active" ? "Not added: this IP is marked Active. Flag it if that's wrong." : "Not added: it doesn't meet the spam list rules")
         : "Added to spam list", t && !t.in_pool);
       render();
     } catch (ex) { err.textContent = errMsg(ex); }
