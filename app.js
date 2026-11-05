@@ -1126,7 +1126,57 @@ async function pageReview(main) {
             <a class="btn sm primary" href="#/add/${encodeURIComponent(p.ip)}">Add to spam list</a>
             <button class="btn sm" data-pspam="${esc(p.ip)}">Dismiss</button></div></div></li>`).join("")}</ul>`
         : `<div class="empty">No 100/hr IPs reported.</div>`}
-    </div>`;
+    </div>
+
+    ${isAdmin() ? `<div class="card">
+      <div class="card-h">Add to spam list in bulk<span class="r">Admin</span></div>
+      <p class="small muted" style="margin-top:0">Adds every IP with a profile that matches, has an FW saved, and isn't Active, scrambled or a crew device. They're set Inactive and their 100/hr report is closed.</p>
+      <div class="row" style="gap:10px">
+        <label class="f grow" style="margin:0"><span>Level at least</span><input class="input mono" data-blv inputmode="numeric" pattern="[0-9]*" maxlength="4" value="25"></label>
+        <label class="f grow" style="margin:0"><span>Rep less than</span><input class="input mono" data-brep inputmode="numeric" pattern="[0-9,]*" maxlength="12" value="200"></label>
+      </div>
+      <div class="seg" style="margin:12px 0 10px">
+        <button data-bscope="reports" class="on">Mod Review reports</button><button data-bscope="all">Every saved IP</button>
+      </div>
+      <button class="btn block" data-bprev>Preview</button>
+      <div data-bout style="margin-top:10px"></div>
+    </div>` : ""}`;
+
+  // Admin: bulk add to the spam list
+  let bscope = "reports";
+  $$("[data-bscope]").forEach((b) => (b.onclick = () => {
+    bscope = b.dataset.bscope;
+    $$("[data-bscope]").forEach((x) => x.classList.toggle("on", x === b));
+    $("[data-bout]").innerHTML = "";
+  }));
+  const bulk = async (dry) => {
+    const lv = Number(($("[data-blv]").value || "").trim()), rep = Number(($("[data-brep]").value || "").replace(/[,\s]/g, ""));
+    if (!(lv >= 25)) { toast("The spam list is for level 25 and up", true); return null; }
+    if (!(rep > 0)) { toast("Enter a reputation amount", true); return null; }
+    const { data, error } = await sb.rpc("admin_bulk_pool", { p_min_level: lv, p_max_rep: rep, p_scope: bscope, p_dry_run: dry });
+    if (error) { toast(/admin_bulk_pool|Could not find the function/i.test(error.message || "") ? "Run the v1.28 SQL file first" : errMsg(error), true); return null; }
+    return { ...data, lv, rep };
+  };
+  $("[data-bprev]") && ($("[data-bprev]").onclick = async (e) => {
+    btnBusy(e.currentTarget, true, "Checking…");
+    const r = await bulk(true);
+    btnBusy(e.currentTarget, false);
+    if (!r) return;
+    const out = $("[data-bout]");
+    out.innerHTML = r.count
+      ? `<div class="small"><b>${r.count.toLocaleString()}</b> IP${r.count === 1 ? "" : "s"} match: level ${r.lv}+ and rep under ${r.rep.toLocaleString()}${bscope === "reports" ? ", from Mod Review reports" : ""}.</div>
+         <div class="tiny mono muted" style="margin:6px 0 10px;line-height:1.6">${r.ips.map(esc).join(" · ")}${r.count > r.ips.length ? ` · +${r.count - r.ips.length} more` : ""}</div>
+         <button class="btn primary block" data-brun>Add ${r.count.toLocaleString()} to spam list</button>`
+      : `<div class="empty">No IPs match.</div>`;
+    $("[data-brun]", out) && ($("[data-brun]", out).onclick = async (ev) => {
+      if (!(await confirmBox({ title: `Add ${r.count} to the spam list?`, body: "They're set Inactive and their Mod Review reports are closed.", ok: "Add" }))) return;
+      btnBusy(ev.currentTarget, true, "Adding…");
+      const done = await bulk(false);
+      if (!done) { btnBusy(ev.currentTarget, false); return; }
+      toast(`Added ${done.count} to the spam list`);
+      render();
+    });
+  });
 
   // possible spam
   $$("[data-pspam]").forEach((b) => (b.onclick = async () => {

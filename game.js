@@ -586,7 +586,8 @@ PAGES.ip = async function pageTarget(main, ip) {
       ${t.in_pool
         ? `<div class="row"><span class="grow small">On the list${t.pool_added_by ? `, added by <b>${esc(t.pool_added_by)}</b>` : ""}.</span>
            ${mod ? `<button class="btn sm danger" data-pool="off">Remove</button>` : ""}</div>`
-        : `<div class="row"><span class="grow small muted">Not on the list.</span><button class="btn sm primary" data-pool="on">Add to list</button></div>`}
+        : `<div class="row"><span class="grow small muted">Not on the list.</span><button class="btn sm primary" data-pool="on">Add to list</button></div>
+           <div class="hint">Only Inactive, not scrambled, level 25+ IPs can be on it.</div>`}
     </div>` : ""}
 
     <div class="card">
@@ -644,8 +645,17 @@ PAGES.ip = async function pageTarget(main, ip) {
   $("[data-keypad]", main).onclick = async () => { if (await keypadDialog(ip, t, 0)) refresh(); };
   $("[data-paste]", main).onclick = async () => { if (await pasteDialog(ip, t)) refresh(); };
   $$("[data-pool]", main).forEach((b) => (b.onclick = async () => {
-    try { await upsertTarget({ ip, in_pool: b.dataset.pool === "on" }); toast(b.dataset.pool === "on" ? "Added to spam list" : "Removed from spam list"); refresh(); }
-    catch (e) { toast(errMsg(e), true); }
+    const on = b.dataset.pool === "on";
+    // Spam list rules: Inactive, not scrambled, player level 25+ (the database keeps them too)
+    if (on) {
+      if (t?.scrambled) return toast("Scrambled IPs can't go on the spam list", true);
+      if (t?.status === "active") return toast("Active IPs can't go on the spam list", true);
+      if (!(Number(t?.player_level) >= 25)) return toast("The spam list is for level 25 and up. Save the player level first.", true);
+    }
+    try {
+      await upsertTarget(on ? { ip, in_pool: true, status: "inactive" } : { ip, in_pool: false });
+      toast(on ? "Added to spam list" : "Removed from spam list"); refresh();
+    } catch (e) { toast(errMsg(e), true); }
   }));
   $("[data-scr]", main) && ($("[data-scr]", main).onclick = async () => { if (await askScrambled(ip)) refresh(); });
   $("[data-unscr]", main) && ($("[data-unscr]", main).onclick = async () => {
@@ -1007,11 +1017,14 @@ PAGES.spam = async function pageSpam(main) {
     err.textContent = "";
     if (!isFullIp(ip)) return (err.textContent = "Enter a full IP like 123.45.67.89");
     if (!/^\d{1,4}$/.test(fw) || !/^\d{1,4}$/.test(lv)) return (err.textContent = "Firewall and account level must be numbers");
+    if (Number(lv) < 25) return (err.textContent = "The spam list is for level 25 and up");
     if (await crewInfo(ip)) return (err.textContent = CREW_MSG);
     try {
       await upsertTarget({ ip, status: "inactive", firewall: Number(fw), player_level: Number(lv), in_pool: true });
-      const { data: t } = await sb.from("targets").select("status").eq("ip", ip).maybeSingle();
-      toast(t && t.status === "active" ? "Added, but this IP is marked Active. Flag it if that's wrong." : "Added to spam list");
+      const { data: t } = await sb.from("targets").select("status,scrambled,in_pool").eq("ip", ip).maybeSingle();
+      toast(t && !t.in_pool
+        ? (t.scrambled ? "Not added: this IP is scrambled" : t.status === "active" ? "Not added: this IP is marked Active. Flag it if that's wrong." : "Not added: it doesn't meet the spam list rules")
+        : "Added to spam list", t && !t.in_pool);
       render();
     } catch (ex) { err.textContent = errMsg(ex); }
   };
@@ -1218,6 +1231,11 @@ PAGES.add = async function pageAdd(main, prefill) {
     }
     if (!existing || (existing.status !== status && !statusLocked())) row.status = status;
     const addingToPool = toPool && !existing?.in_pool;
+    if (addingToPool) {
+      const lvl = Number(f.player_level.value.trim() || existing?.player_level || 0);
+      if (lvl < 25) return (errBox.textContent = "The spam list is for level 25 and up. Enter the player level, or untick Add to inactive spam list.");
+      if (existing?.scrambled) return (errBox.textContent = "Scrambled IPs can't go on the spam list.");
+    }
     if (addingToPool) { row.in_pool = true; row.status = "inactive"; }
     const btn = $("button[type=submit]", f);
     btnBusy(btn, true, "Saving…");
