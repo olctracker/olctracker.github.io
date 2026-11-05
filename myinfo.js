@@ -371,14 +371,35 @@ function soonIps(d, targets, rounds = 3) {
   return [...out].map(([ip, fw]) => ({ ip, fw })).sort((a, b) => a.fw - b.fw || a.ip.localeCompare(b.ip));
 }
 
-/* "Already bypassed" check marks for the soon list. Kept on this phone, per account,
-   until the member resets them (their bypasses stay until they clear them in the game). */
+/* "Already bypassed" check marks for the soon list, kept until the member resets them
+   (their bypasses stay until they clear them in the game). Saved to the member's account
+   (table guide_soon, with the soon list itself, so Companion's Type IP can use them) and
+   on this phone as a backup for before the v1.27 database update. */
 const soonKey = () => `olc-soon-done-${O().S.profile?.id || ""}`;
-function soonDone() {
-  try { return new Set(JSON.parse(localStorage.getItem(soonKey()) || "[]")); } catch (e) { return new Set(); }
+let soonDb = null;                                   // checked IPs from the database, or null (no table yet)
+function localSoon() {
+  try { return JSON.parse(localStorage.getItem(soonKey()) || "[]"); } catch (e) { return []; }
 }
-function saveSoonDone(set) {
-  try { localStorage.setItem(soonKey(), JSON.stringify([...set])); return true; } catch (e) { return false; }
+// The account's check marks once the database has them; this phone's before that.
+function soonDone() { return new Set(soonDb !== null ? soonDb : localSoon()); }
+async function loadSoonDb() {
+  const { sb, S } = O();
+  const { data, error } = await sb.from("guide_soon").select("checked").eq("user_id", S.profile.id).maybeSingle();
+  if (error) { soonDb = null; return; }
+  // first time: this phone's check marks move to the account
+  soonDb = data ? (data.checked || []) : localSoon();
+}
+/* Saves the check marks (and, when given, the current soon list) everywhere it can. */
+async function saveSoonDone(set, list) {
+  let ok = false;
+  try { localStorage.setItem(soonKey(), JSON.stringify([...set])); ok = true; } catch (e) {}
+  if (soonDb !== null) {
+    const row = { user_id: O().S.profile.id, checked: [...set], updated_at: new Date().toISOString() };
+    if (list) row.ips = list.map((x) => ({ ip: x.ip, fw: x.fw }));
+    const { error } = await O().sb.from("guide_soon").upsert(row, { onConflict: "user_id" });
+    if (!error) { soonDb = [...set]; ok = true; }
+  }
+  return ok;
 }
 
 PAGES.leveling = async function pageLeveling(main) {
@@ -398,8 +419,10 @@ PAGES.leveling = async function pageLeveling(main) {
   let targets = (await loadTargets()).filter((t) => t.ip !== d.ip && G().isFullIp(t.ip));
   targets = await G().dropCrew(targets, (t) => [t.ip]);
   const g = buildGuide(d, targets);
+  await loadSoonDb().catch(() => { soonDb = null; });
   const done = soonDone();
   const soonAll = soonIps(d, targets);
+  saveSoonDone(done, soonAll).catch(() => {});      // keeps Companion's copy of the list up to date
   const soon = soonAll.filter((x) => !done.has(x.ip));
   const hidden = soonAll.length - soon.length;
   const skipNote = (s) => s.length ? `<div class="skip">skips ${s.length} level${s.length === 1 ? "" : "s"} (${s.join(", ")})</div>` : "";
@@ -456,15 +479,15 @@ PAGES.leveling = async function pageLeveling(main) {
     try { await navigator.clipboard.writeText(text); toast(`Copied ${soon.length} IP${soon.length === 1 ? "" : "s"}`); }
     catch (e) { copy(text); }
   };
-  $$("[data-soondone]", main).forEach((b) => (b.onclick = () => {
+  $$("[data-soondone]", main).forEach((b) => (b.onclick = async () => {
     const set = soonDone(); set.add(b.dataset.soondone);
-    if (!saveSoonDone(set)) return toast("Couldn't save on this phone", true);
+    if (!(await saveSoonDone(set))) return toast("Couldn't save the check mark", true);
     toast(`${b.dataset.soondone} checked off`); render();
   }));
   const reset = $("[data-soonreset]", main);
   if (reset) reset.onclick = async () => {
     if (!(await O().confirmBox({ title: "Reset check marks?", body: `All ${done.size} checked IP${done.size === 1 ? "" : "s"} come back to the soon list. Use this after you clear your bypasses in the game.`, ok: "Reset" }))) return;
-    saveSoonDone(new Set()); toast("Check marks reset"); render();
+    await saveSoonDone(new Set()); toast("Check marks reset"); render();
   };
   const rows = new Map(g.cards.flatMap((c) => c.rows.map((r) => [r.p.key, r])));
   const ipFor = new Map(g.cards.flatMap((c) => c.rows.map((r) => [r.p.key, c.ip])));
@@ -483,7 +506,7 @@ PAGES.leveling = async function pageLeveling(main) {
     const used = r.safer && lvl === r.safer.lvl && lvl !== r.lvl ? r.safer.ip : ipFor.get(r.p.key);
     try {
       await saveDevice({ [r.p.key]: lvl });
-      if (used) { const set = soonDone(); set.add(used); saveSoonDone(set); }
+      if (used) { const set = soonDone(); set.add(used); await saveSoonDone(set); }
       toast(`${r.p.name} → ${lvl}`); render();
     }
     catch (e) { toast(errMsg(e), true); }
