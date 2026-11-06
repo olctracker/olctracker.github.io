@@ -43,8 +43,33 @@ async function loadDevice() {
   G().setMyDevice(data);
   return data;
 }
+/* ---------- player level: worked out from everything you own ----------
+   Level = XP of all upgrades + "mission XP" (xp_offset). Missions can't be seen in the
+   game, so when you type your real level, the difference is kept as mission XP and
+   added from then on. After a reboot it is set so the new run starts at LVL 1. */
+const LEVEL_KEYS = new Set(["player_level", "player_xp", "keygen", "device_level", "network_level", "botnet_level",
+  "notepad", "message_encryptor", "antivirus", "spam", "rootkit", "firewall", "bypasser", "password_cracker",
+  "password_encryptor", "proxy", "trace", "siphon"]);
+function missionXp(d) {
+  const U = window.OLC_UPG;
+  if (d?.xp_offset != null) return d.xp_offset;
+  // never worked out yet: keep a typed level only if it's higher than the upgrades give
+  return d?.player_level != null ? Math.max(0, U.totalXp(d.player_level, d.player_xp || 0) - U.deviceXp(d)) : 0;
+}
+function levelFields(d, changes) {
+  const U = window.OLC_UPG;
+  const m = { ...(d || {}), ...changes }, owned = U.deviceXp(m);
+  const off = ("player_level" in changes || "player_xp" in changes)
+    ? U.totalXp(m.player_level || 1, m.player_xp || 0) - owned : missionXp(d);
+  const r = U.fromTotal(owned + off);
+  return { player_level: r.level, player_xp: r.exp, xp_offset: Math.round(off) };
+}
 async function saveDevice(changes) {
   const { sb, S } = O();
+  if (Object.keys(changes).some((k) => LEVEL_KEYS.has(k)) && window.OLC_UPG) {
+    const cur = await G().myDevice().catch(() => null);
+    changes = { ...changes, ...levelFields(cur, changes) };
+  }
   const { data, error } = await sb.from("member_devices")
     .upsert({ user_id: S.profile.id, ...changes }, { onConflict: "user_id" }).select().single();
   if (error) throw error;
@@ -77,6 +102,46 @@ function numberAsk(title, value, hint = "") {
         const v = inp.value.trim();
         if (!/^\d{1,4}$/.test(v)) { $(".err", w).textContent = "Enter a number"; return; }
         close(); done(Number(v));
+      };
+    });
+  });
+}
+const fmt = (v) => Number(v).toLocaleString("en-US");
+function lvlSub(d) {
+  if (d?.player_level == null || d.player_xp == null) return "";
+  const req = window.OLC_UPG.charTarget(d.player_level);
+  return `<div class="tiny mono muted" style="margin-top:2px">${fmt(d.player_xp)} / ${fmt(req)}</div>`;
+}
+/* Player level: worked out automatically; typing the real one keeps the difference as mission XP */
+function levelAsk(d) {
+  const { modal, esc, $ } = O();
+  const U = window.OLC_UPG;
+  const owned = U.fromTotal(U.deviceXp(d)), mis = missionXp(d);
+  return new Promise((done) => {
+    modal(`<h3>Player level</h3>
+      <p class="small muted" style="margin-top:0">Worked out from your upgrades: LVL ${owned.level} · ${fmt(owned.exp)} / ${fmt(owned.required)}${mis ? `, plus ${mis > 0 ? "+" : ""}${fmt(mis)} mission XP` : ""}.
+      If the game shows something else, type it here. The difference is kept as mission XP and added from now on.</p>
+      <form><div class="up-two">
+        <label class="up-f"><span>LVL</span><input class="input mono" name="l" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${esc(d?.player_level ?? "")}"></label>
+        <label class="up-f"><span>XP (before the /)</span><input class="input mono" name="x" inputmode="numeric" pattern="[0-9]*" maxlength="7" value="${esc(d?.player_xp ?? "")}" placeholder="0"></label>
+      </div><div class="hint" data-req></div><div class="err"></div>
+      <div class="btns"><button class="btn" type="button" data-no>Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`,
+    (w, close) => {
+      const f = $("form", w);
+      const show = () => {
+        const l = Number(f.l.value), req = U.charTarget(l);
+        $("[data-req]", w).textContent = req ? `LVL ${l} needs ${fmt(req)} XP to level up.` : "";
+      };
+      [f.l, f.x].forEach((i) => i.addEventListener("input", () => { i.value = i.value.replace(/[^\d]/g, ""); show(); }));
+      show();
+      setTimeout(() => { f.l.focus(); f.l.select(); }, 60);
+      $("[data-no]", w).onclick = () => { close(); done(null); };
+      f.onsubmit = (e) => {
+        e.preventDefault();
+        const l = Number(f.l.value), x = Number(f.x.value || 0), req = U.charTarget(l);
+        if (!req) { $(".err", w).textContent = "Enter your level"; return; }
+        if (x >= req) { $(".err", w).textContent = `XP must be less than ${fmt(req)} at LVL ${l}`; return; }
+        close(); done({ player_level: l, player_xp: x });
       };
     });
   });
@@ -174,6 +239,8 @@ PAGES.device = async function pageDevice(main) {
   let d;
   try { d = await loadDevice(); }
   catch (e) { main.innerHTML = missingDb(e) ? needUpdate : `<div class="card"><p>${esc(errMsg(e))}</p></div>`; return; }
+  // first visit since levels are worked out: fill in the level from what you own
+  if (d && d.xp_offset == null && window.OLC_UPG) d = await saveDevice(levelFields(d, {})).catch(() => d);
   const r = d?.reboots ?? 0, split = r >= SPLIT_FROM;
   const foldOpen = (() => { try { return sessionStorage.getItem("olc-dev-fold") === "1"; } catch (e) { return false; } })();
   const hwOpen = (() => { try { return sessionStorage.getItem("olc-hw-fold") === "1"; } catch (e) { return false; } })();
@@ -188,7 +255,7 @@ PAGES.device = async function pageDevice(main) {
       </div>
       <div style="margin:8px 0 14px">${classPill(d)}</div>
       <div class="stats">
-        <button class="stat" data-num="player_level"><div class="k">Player level</div><div class="v">${dash(d?.player_level)}</div></button>
+        <button class="stat" data-lvl><div class="k">Player level</div><div class="v">${dash(d?.player_level)}</div>${lvlSub(d)}</button>
         <button class="stat" data-num="keygen"><div class="k">Keygen</div><div class="v">${dash(d?.keygen)}</div></button>
         <button class="stat" data-num="bypasser"><div class="k">Bypasser</div><div class="v">${dash(d?.bypasser)}${d?.device_class === "apex" ? ` <small class="plus">+${APEX_BYPASS}</small>` : ""}</div></button>
       </div>
@@ -267,6 +334,10 @@ PAGES.device = async function pageDevice(main) {
       check: (s) => (/\s/.test(s) ? "Wallet ID can't contain spaces" : "") });
     if (v !== undefined) save({ wallet: v }, v ? "Wallet saved · hidden from the crew" : "Wallet removed");
   };
+  $("[data-lvl]", main).onclick = async () => {
+    const v = await levelAsk(d);
+    if (v) save(v, `LVL ${v.player_level} saved`);
+  };
   $$("[data-num]", main).forEach((b) => (b.onclick = async () => {
     const k = b.dataset.num;
     const v = await numberAsk(appName(k), d?.[k]);
@@ -290,6 +361,8 @@ PAGES.device = async function pageDevice(main) {
     if (error) return toast(errMsg(error), true);
     toast(`Rebooted · run R${data} started`);
     await loadDevice().catch(() => {});
+    // new run starts at LVL 1: hardware you keep doesn't count again
+    await saveDevice({ player_level: 1, player_xp: 0 }).catch(() => {});
     render();
   };
 };

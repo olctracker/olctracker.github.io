@@ -615,6 +615,12 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .up-cost b { font-size: 15px; overflow-wrap: anywhere; }
 .up-cost em { font: normal 11px "JetBrains Mono", monospace; color: var(--dim); overflow-wrap: anywhere; }
 .up-calc.on, .up-card.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+/* Character Builder: base levels in plain text colour, upgraded ones in the theme colour */
+.up-card .input { color: var(--text); font-weight: 600; }
+.up-card.on { border-color: var(--accent); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent 85%), var(--panel); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 22%, transparent); }
+.up-card.on .up-name { color: var(--accent); }
+.up-card.on [data-side="to"] { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.up-card.on .up-costs b { color: var(--accent); }
 .up-bad { color: var(--danger); font-size: 12px; }
 .up-warn { color: var(--warn); }
 .up-group { font: 600 11px "JetBrains Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 14px 4px 8px; }

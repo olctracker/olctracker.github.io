@@ -54,20 +54,42 @@ function resolve(state) {
 }
 const usable = (lv) => Object.fromEntries(Object.entries(lv).filter(([, l]) => !l.error));
 
-/** Copies My Device into the start levels (software, Keygen, player level). */
-async function importInto(state) {
+/** Copies My Device into the start levels (software, Keygen, player level).
+    With `same`, end levels are set to match, so the build shows your device as it is now. */
+async function importInto(state, same) {
   const d = await G().myDevice(true).catch(() => null);
   if (!d) { O().toast("Set up My Device first", true); return false; }
-  state.cur = state.cur || {};
+  state.cur = {};
+  if (same) state.end = {};
   let got = 0;
-  const col = { device: "device_level", network: "network_level", botnet: "botnet_level" };
   for (const it of U().ITEMS) {
-    const v = d[col[it.key] || it.key];
+    const v = d[U().DEV_COL[it.key] || it.key];
     if (v != null) { state.cur[it.key] = String(v); got++; }
+    if (same) state.end[it.key] = state.cur[it.key] ?? String(it.min);
   }
-  if (d.player_level != null) { state.lvl = String(d.player_level); state.xp = ""; }
+  // player level: My Device's (worked out from upgrades + mission XP), else worked out here
+  const owned = U().ownedXp(curLevels(state));
+  if (d.player_level != null) {
+    state.lvl = String(d.player_level); state.xp = String(d.player_xp ?? "");
+    state.mission = d.xp_offset ?? Math.max(0, U().totalXp(d.player_level, d.player_xp || 0) - owned);
+  } else state.mission = d.xp_offset ?? 0;
+  syncLevel(state);
   O().toast(`Imported ${got} level${got === 1 ? "" : "s"} from My Device`);
   return true;
+}
+
+/* ---------- account level from current levels + mission XP ---------- */
+const curLevels = (state) => Object.fromEntries(U().ITEMS.map((it) => [it.key, num(state.cur?.[it.key]) ?? it.min]));
+/** Sets LVL and XP from what's owned plus mission XP. */
+function syncLevel(state) {
+  const r = U().fromTotal(U().ownedXp(curLevels(state)) + (Number(state.mission) || 0));
+  state.lvl = String(r.level); state.xp = String(r.exp);
+}
+/** Typed LVL/XP: the difference from what's owned is kept as mission XP. */
+function setMission(state) {
+  const l = num(state.lvl);
+  if (!l || !U().charTarget(l)) return;
+  state.mission = U().totalXp(l, num(state.xp) ?? 0) - U().ownedXp(curLevels(state));
 }
 
 /** The account level boxes + where it lands. */
@@ -90,7 +112,7 @@ function nowText(a, state) {
 }
 
 /** Wires inputs: typing updates state and calls update() without redrawing the boxes. */
-function wire(main, state, saveKey, update) {
+function wire(main, state, saveKey, update, hooks = {}) {
   const { $$ } = O();
   $$("[data-k]", main).forEach((el) => {
     const on = () => {
@@ -98,6 +120,7 @@ function wire(main, state, saveKey, update) {
       const box = el.dataset.side === "from" ? "cur" : "end";
       state[box] = state[box] || {};
       state[box][el.dataset.k] = el.value;
+      if (box === "cur" && hooks.cur) hooks.cur(el.dataset.k);
       keep(saveKey, state); update();
     };
     el.addEventListener("input", on);
@@ -106,7 +129,9 @@ function wire(main, state, saveKey, update) {
   });
   $$("[data-acc]", main).forEach((el) => el.addEventListener("input", () => {
     el.value = el.value.replace(/[^\d]/g, "");
-    state[el.dataset.acc] = el.value; keep(saveKey, state); update();
+    state[el.dataset.acc] = el.value;
+    if (hooks.acc) hooks.acc();
+    keep(saveKey, state); update();
   }));
 }
 
@@ -188,10 +213,17 @@ PAGES.builder = async function pageBuilder(main) {
   const state = load(KEY);
   const dev = await G().myDevice().catch(() => null);
   if (state.reboot == null) state.reboot = String(dev?.reboots ?? 0);
+  // builds saved before levels were worked out: keep a typed level only if it's higher
+  if (state.mission == null) {
+    const l = num(state.lvl);
+    state.mission = l && U().charTarget(l) ? Math.max(0, U().totalXp(l, num(state.xp) ?? 0) - U().ownedXp(curLevels(state))) : 0;
+  }
+  syncLevel(state); keep(KEY, state);
   let shot = null;
 
   main.innerHTML = `
-    <div class="row" style="margin:0 2px 12px"><button class="btn sm" data-import>Import my device</button>
+    <div class="row" style="margin:0 2px 12px;gap:6px;flex-wrap:wrap"><button class="btn sm" data-import>Import my device</button>
+      <button class="btn sm" data-tokg>Upgrade software to Keygen</button>
       <span class="grow"></span><button class="btn sm danger" data-reset>Reset</button></div>
 
     <div class="card accent">
@@ -244,8 +276,9 @@ PAGES.builder = async function pageBuilder(main) {
         `<div><span>Store</span><b class="mono">${p ? n(p.store.cost) : "—"}</b></div>
          <div><span>Keygen</span><b class="mono">${!U().canKey(it.key) ? `<small class="muted">store only</small>` : p ? n(p.jump.cost) : "—"}</b></div>`;
     }
-    const a = account(state);
-    $("[data-now]", main).innerHTML = nowText(a, state) + (a.ok ? " · Prices and XP are the same on every reboot so far." : "");
+    const a = account(state), mis = Number(state.mission) || 0;
+    $("[data-now]", main).innerHTML = nowText(a, { xp: "1" }) +
+      (a.ok ? ` · worked out from your current levels${mis ? `, ${mis > 0 ? "+" : ""}${n(mis)} mission XP` : ""}. Type your real level if it's different.` : "");
     const one = a.land(r.store.xp), jump = a.land(r.jump.xp), m2 = a.land(r.mix2.xp), m3 = a.land(r.mix3.xp);
     const cap = (l) => (l >= U().MIX_CAP ? `${U().MIX_CAP}+` : String(l));
     let mix = "—";
@@ -271,16 +304,39 @@ PAGES.builder = async function pageBuilder(main) {
       <div><span>XP one Keygen jump</span><b class="mono">+${n(r.jump.xp)}</b></div>`;
     last = { lv, r, a, one, jump, mix: m2 && m3 ? `≈ ${mix}` : "—", mixCost };
   };
-  wire(main, state, KEY, update);
+  const box = (k, side) => $(`[data-k="${k}"][data-side="${side}"]`, main);
+  wire(main, state, KEY, update, {
+    // current level changed: account level follows, and an end level can't stay below it
+    cur: (k) => {
+      const c = num(state.cur[k]), e = num(state.end?.[k]);
+      if (c !== null && e !== null && e < c) { state.end[k] = String(c); box(k, "to").value = String(c); }
+      syncLevel(state);
+      $('[data-acc="lvl"]', main).value = state.lvl; $('[data-acc="xp"]', main).value = state.xp;
+    },
+    acc: () => setMission(state)
+  });
   $("[data-reboot]", main).onchange = (e) => { state.reboot = e.target.value; keep(KEY, state); };
   update();
 
   $("[data-import]", main).onclick = async () => {
-    if (await importInto(state)) { const d = await G().myDevice().catch(() => null); state.reboot = String(d?.reboots ?? state.reboot ?? 0); keep(KEY, state); render(); }
+    if (await importInto(state, true)) { const d = await G().myDevice().catch(() => null); state.reboot = String(d?.reboots ?? state.reboot ?? 0); keep(KEY, state); render(); }
+  };
+  $("[data-tokg]", main).onclick = () => {
+    const kg = num(state.end?.keygen) ?? num(state.cur?.keygen);
+    if (!kg) return O().toast("Enter your Keygen level first", true);
+    state.end = state.end || {};
+    let up = 0;
+    for (const it of U().ITEMS.filter((x) => x.cat === "sw")) {
+      const c = num(state.cur?.[it.key]) ?? it.min, e = num(state.end[it.key]) ?? c;
+      if (e < kg && c <= kg) { state.end[it.key] = String(kg); up++; }
+    }
+    keep(KEY, state); render();
+    O().toast(up ? `${up} app${up === 1 ? "" : "s"} raised to Keygen ${kg}` : `All software is already at Keygen ${kg} or higher`);
   };
   $("[data-reset]", main).onclick = async () => {
     if (!(await O().confirmBox({ title: "Reset current levels?", body: "Sets every current level to zero. Device and Network go to 1 and Botnet to Free, the lowest they can be.", ok: "Reset", danger: true }))) return;
     state.cur = Object.fromEntries(U().ITEMS.map((it) => [it.key, String(it.min)]));
+    state.mission = 0; syncLevel(state);
     keep(KEY, state); render();
   };
 
@@ -288,7 +344,7 @@ PAGES.builder = async function pageBuilder(main) {
     const { lv, r, a, one, jump, mix, mixCost } = last;
     const by = Object.fromEntries(r.rows.map((p) => [p.key, p]));
     const blob = await drawImage({
-      title: "Character Build",
+      title: r.rows.length ? "Character Build" : "Current Build",
       subtitle: `${S.profile.username} · R${state.reboot ?? 0} · start LVL ${a.level}${a.ok ? ` · ${n(a.exp)} / ${n(a.req)}` : ""}`,
       groups: U().GROUPS.map((g) => ({ title: g.title, cards: g.keys.map((k) => {
         const p = by[k], l = lv[k];
@@ -364,8 +420,12 @@ function drawImage(d) {
       { weight: 700, color: dim, align: "center", maxW: labelW - 12, mono: true }));
     grp.cards.forEach((card, j) => {
       const x = left + labelW + gap + j * (cardW + gap);
-      box(x, y, cardW, rowH, 12, card.changed ? panel2 : panel, card.changed ? accent : line);
-      write(card.name, x + cardW / 2, y + 30, 19, { weight: 600, align: "center", maxW: cardW - 16, color: card.changed ? text : dim });
+      box(x, y, cardW, rowH, 12, panel, card.changed ? accent : line);
+      if (card.changed) {           // upgraded: tinted in the theme colour so it stands out
+        g.save(); g.globalAlpha = 0.16; box(x, y, cardW, rowH, 12, accent); g.restore();
+        g.lineWidth = 3; g.strokeStyle = accent; g.stroke();
+      }
+      write(card.name, x + cardW / 2, y + 30, 19, { weight: 700, align: "center", maxW: cardW - 16, color: card.changed ? accent : text });
       if (card.changed) {
         write(`${card.from} → ${card.to}`, x + cardW / 2, y + 78, 30, { weight: 700, mono: true, align: "center", maxW: cardW - 14, color: accent });
         write("STORE", x + 12, y + 112, 12, { weight: 700, color: faint, mono: true });
@@ -373,7 +433,7 @@ function drawImage(d) {
         write("KEYGEN", x + 12, y + 142, 12, { weight: 700, color: faint, mono: true });
         write(card.key, x + cardW - 12, y + 142, 16, { mono: true, align: "right", maxW: cardW - 80, color: card.key === "store only" ? dim : text });
       } else {
-        write(card.from, x + cardW / 2, y + 96, 34, { weight: 700, mono: true, align: "center", maxW: cardW - 14, color: faint });
+        write(card.from, x + cardW / 2, y + 96, 34, { weight: 700, mono: true, align: "center", maxW: cardW - 14, color: text });
       }
     });
   });
