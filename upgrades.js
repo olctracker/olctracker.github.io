@@ -93,31 +93,8 @@ function addXp(level, exp, gain) {
   return { level, exp: xp, required: req };
 }
 
-/* ---------- current account level from what you own ---------- */
-// Levels every account starts with (new account and after a reboot): free, no XP.
-const FREE_START = { firewall: 1, password_encryptor: 1, bypasser: 1, password_cracker: 1, keygen: 1 };
 // My Device column for each item
 const DEV_COL = { device: "device_level", network: "network_level", botnet: "botnet_level" };
-/** XP from buying an item up to level L in the store (free start levels give none). */
-function itemXp(key, L) {
-  const it = BY_KEY[key];
-  const from = Math.max(it.min, FREE_START[key] || 0);
-  let xp = 0;
-  for (let l = from + 1; l <= (Number(L) || 0); l++) { const s = storeLevel(key, l); if (!s) break; xp += s.xp; }
-  return xp;
-}
-/** XP of everything owned. levels = { key: level } (item keys). */
-const ownedXp = (levels) => ITEMS.reduce((t, it) => t + itemXp(it.key, levels?.[it.key]), 0);
-/** Same, from a My Device row. */
-const deviceXp = (d) => ownedXp(Object.fromEntries(ITEMS.map((it) => [it.key, d?.[DEV_COL[it.key] || it.key]])));
-/** All XP ever earned to be at LVL L with `exp` XP. */
-function totalXp(L, exp) {
-  let t = Math.max(0, Number(exp) || 0);
-  for (let l = 1; l < L; l++) t += charTarget(l);
-  return t;
-}
-/** LVL + XP from all XP earned. */
-const fromTotal = (total) => addXp(1, 0, Math.max(0, Math.round(total)));
 
 /* ---------- one upgrade, from → to ---------- */
 function plan(key, from, to) {
@@ -204,7 +181,7 @@ TIPS
 From OLC Database`;
 
 const API = { ITEMS, BY_KEY, GROUPS, BOTNET_TIERS, MIX_CAP, softPrice, softXp, keyPrice, storeLevel, canKey,
-  charTarget, addXp, plan, chunked, build, SHEET, FREE_START, DEV_COL, itemXp, ownedXp, deviceXp, totalXp, fromTotal };
+  charTarget, addXp, plan, chunked, build, SHEET, DEV_COL };
 if (typeof window !== "undefined") window.OLC_UPG = API;
 if (typeof module !== "undefined") module.exports = API;
 })();

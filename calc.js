@@ -67,29 +67,10 @@ async function importInto(state, same) {
     if (v != null) { state.cur[it.key] = String(v); got++; }
     if (same) state.end[it.key] = state.cur[it.key] ?? String(it.min);
   }
-  // player level: My Device's (worked out from upgrades + mission XP), else worked out here
-  const owned = U().ownedXp(curLevels(state));
-  if (d.player_level != null) {
-    state.lvl = String(d.player_level); state.xp = String(d.player_xp ?? "");
-    state.mission = d.xp_offset ?? Math.max(0, U().totalXp(d.player_level, d.player_xp || 0) - owned);
-  } else state.mission = d.xp_offset ?? 0;
-  syncLevel(state);
+  // player level and XP exactly as typed in My Device
+  if (d.player_level != null) { state.lvl = String(d.player_level); state.xp = d.player_xp != null ? String(d.player_xp) : ""; }
   O().toast(`Imported ${got} level${got === 1 ? "" : "s"} from My Device`);
   return true;
-}
-
-/* ---------- account level from current levels + mission XP ---------- */
-const curLevels = (state) => Object.fromEntries(U().ITEMS.map((it) => [it.key, num(state.cur?.[it.key]) ?? it.min]));
-/** Sets LVL and XP from what's owned plus mission XP. */
-function syncLevel(state) {
-  const r = U().fromTotal(U().ownedXp(curLevels(state)) + (Number(state.mission) || 0));
-  state.lvl = String(r.level); state.xp = String(r.exp);
-}
-/** Typed LVL/XP: the difference from what's owned is kept as mission XP. */
-function setMission(state) {
-  const l = num(state.lvl);
-  if (!l || !U().charTarget(l)) return;
-  state.mission = U().totalXp(l, num(state.xp) ?? 0) - U().ownedXp(curLevels(state));
 }
 
 /** The account level boxes + where it lands. */
@@ -213,17 +194,11 @@ PAGES.builder = async function pageBuilder(main) {
   const state = load(KEY);
   const dev = await G().myDevice().catch(() => null);
   if (state.reboot == null) state.reboot = String(dev?.reboots ?? 0);
-  // builds saved before levels were worked out: keep a typed level only if it's higher
-  if (state.mission == null) {
-    const l = num(state.lvl);
-    state.mission = l && U().charTarget(l) ? Math.max(0, U().totalXp(l, num(state.xp) ?? 0) - U().ownedXp(curLevels(state))) : 0;
-  }
-  syncLevel(state); keep(KEY, state);
   let shot = null;
 
   main.innerHTML = `
-    <div class="row" style="margin:0 2px 12px;gap:6px;flex-wrap:wrap"><button class="btn sm" data-import>Import my device</button>
-      <button class="btn sm" data-tokg>Upgrade software to Keygen</button>
+    <div class="row" style="margin:0 2px 12px;gap:6px;flex-wrap:nowrap"><button class="btn sm" data-import>Import my device</button>
+      <button class="btn sm" data-tokg>Upgrade to Keygen</button>
       <span class="grow"></span><button class="btn sm danger" data-reset>Reset</button></div>
 
     <div class="card accent">
@@ -276,9 +251,8 @@ PAGES.builder = async function pageBuilder(main) {
         `<div><span>Store</span><b class="mono">${p ? n(p.store.cost) : "—"}</b></div>
          <div><span>Keygen</span><b class="mono">${!U().canKey(it.key) ? `<small class="muted">store only</small>` : p ? n(p.jump.cost) : "—"}</b></div>`;
     }
-    const a = account(state), mis = Number(state.mission) || 0;
-    $("[data-now]", main).innerHTML = nowText(a, { xp: "1" }) +
-      (a.ok ? ` · worked out from your current levels${mis ? `, ${mis > 0 ? "+" : ""}${n(mis)} mission XP` : ""}. Type your real level if it's different.` : "");
+    const a = account(state);
+    $("[data-now]", main).innerHTML = nowText(a, state) + (a.ok ? " · Prices and XP are the same on every reboot so far." : "");
     const one = a.land(r.store.xp), jump = a.land(r.jump.xp), m2 = a.land(r.mix2.xp), m3 = a.land(r.mix3.xp);
     const cap = (l) => (l >= U().MIX_CAP ? `${U().MIX_CAP}+` : String(l));
     let mix = "—";
@@ -306,14 +280,11 @@ PAGES.builder = async function pageBuilder(main) {
   };
   const box = (k, side) => $(`[data-k="${k}"][data-side="${side}"]`, main);
   wire(main, state, KEY, update, {
-    // current level changed: account level follows, and an end level can't stay below it
+    // an end level can't stay below the current level
     cur: (k) => {
       const c = num(state.cur[k]), e = num(state.end?.[k]);
       if (c !== null && e !== null && e < c) { state.end[k] = String(c); box(k, "to").value = String(c); }
-      syncLevel(state);
-      $('[data-acc="lvl"]', main).value = state.lvl; $('[data-acc="xp"]', main).value = state.xp;
-    },
-    acc: () => setMission(state)
+    }
   });
   $("[data-reboot]", main).onchange = (e) => { state.reboot = e.target.value; keep(KEY, state); };
   update();
@@ -336,7 +307,6 @@ PAGES.builder = async function pageBuilder(main) {
   $("[data-reset]", main).onclick = async () => {
     if (!(await O().confirmBox({ title: "Reset current levels?", body: "Sets every current level to zero. Device and Network go to 1 and Botnet to Free, the lowest they can be.", ok: "Reset", danger: true }))) return;
     state.cur = Object.fromEntries(U().ITEMS.map((it) => [it.key, String(it.min)]));
-    state.mission = 0; syncLevel(state);
     keep(KEY, state); render();
   };
 
