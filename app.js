@@ -266,7 +266,8 @@ async function loadPendingCount() {
   S.pendingCount = a.count || 0;
   S.reviewCount = (b.count || 0) + (c.data || []).length;
   if (isAdmin()) {
-    const m = await sb.from("admin_messages").select("id", { count: "exact", head: true });
+    let m = await sb.from("admin_messages").select("id", { count: "exact", head: true }).eq("from_admin", false);
+    if (m.error) m = await sb.from("admin_messages").select("id", { count: "exact", head: true });   // before v1.30
     S.msgCount = m.error ? 0 : m.count || 0;           // 0 until the v1.26 update is run
   }
 }

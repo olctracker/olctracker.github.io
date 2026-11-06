@@ -28,11 +28,11 @@ async function copyText(text) {
 /* ---------- Contact Admin (everyone except the Admin) ---------- */
 PAGES.contact = async function pageContact(main) {
   const { sb, S, esc, $, toast, errMsg, btnBusy, render, fmtDateTime } = O();
-  const { data, error } = await sb.from("admin_messages").select("id,body,created_at")
+  const { data, error } = await sb.from("admin_messages").select("*")
     .eq("user_id", S.profile.id).order("created_at", { ascending: false });
   if (error && missing(error)) { main.innerHTML = needSql; return; }
   if (error) throw error;
-  const mine = data || [];
+  const mine = (data || []).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));    // newest first
   let draft = "";
   try { draft = sessionStorage.getItem("olc-contact-draft") || ""; } catch (e) {}
 
@@ -45,13 +45,13 @@ PAGES.contact = async function pageContact(main) {
       <button class="btn primary block" data-send style="margin-top:10px" disabled>Send to Admin</button>
     </div>
     <div class="card">
-      <div class="card-h">Waiting to be read<span class="r">${mine.length}</span></div>
+      <div class="card-h">Your conversation<span class="r">newest first</span></div>
       ${mine.length ? `<ul class="list">${mine.map((m) => `
-        <li style="align-items:flex-start"><div class="grow" style="min-width:0">
-          <div class="tiny muted">${fmtDateTime(m.created_at)} · ${n(m.body.length)} characters</div>
-          <div class="small pre msg-peek">${esc(m.body.length > 280 ? m.body.slice(0, 280) + "…" : m.body)}</div></div></li>`).join("")}</ul>
+        <li style="align-items:flex-start" class="${m.from_admin ? "msg-reply" : ""}"><div class="grow" style="min-width:0">
+          <div class="tiny muted">${m.from_admin ? `<b class="msg-from-admin">Admin replied</b> · ` : "You · "}${fmtDateTime(m.created_at)}${m.from_admin ? "" : ` · ${n(m.body.length)} characters`}</div>
+          <div class="small pre ${m.from_admin ? "" : "msg-peek"}">${esc(!m.from_admin && m.body.length > 280 ? m.body.slice(0, 280) + "…" : m.body)}</div></div></li>`).join("")}</ul>
         <div class="hint">When the Admin is done with a message it's deleted and disappears from here.</div>`
-        : `<div class="empty">Nothing waiting.</div>`}
+        : `<div class="empty">No messages yet.</div>`}
     </div>`;
 
   const ta = $("textarea", main), send = $("[data-send]", main), count = $("[data-count]", main);
@@ -90,7 +90,8 @@ PAGES.messages = async function pageMessages(main, arg) {
       ${list.length ? `<ul class="list">${list.map((t) => `
         <li class="msg-thread" data-open="${esc(t.user_id)}"><div class="grow">
           <b>${esc(t.username)}</b>
-          <div class="tiny muted">${n(t.messages)} message${Number(t.messages) === 1 ? "" : "s"} · ${n(t.chars)} characters · last ${fmtDateTime(t.last_at)}</div></div>
+          <div class="tiny muted">${n(t.messages)} message${Number(t.messages) === 1 ? "" : "s"}${t.replies ? ` · ${n(t.replies)} repl${Number(t.replies) === 1 ? "y" : "ies"}` : ""} · last ${fmtDateTime(t.last_at)}</div>
+          ${t.last_from_admin ? `<div class="tiny muted">You replied last</div>` : `<div class="tiny msg-from-admin">Waiting for your reply</div>`}</div>
           <span class="count-pill mono">${n(t.messages)}</span>
           <span class="icon-btn" aria-hidden="true">›</span></li>`).join("")}</ul>`
         : `<div class="empty">No messages.</div>`}
@@ -100,12 +101,12 @@ PAGES.messages = async function pageMessages(main, arg) {
 
   async function thread(main, uid) {
     const [mR, pR] = await Promise.all([
-      sb.from("admin_messages").select("id,body,created_at").eq("user_id", uid).order("created_at", { ascending: true }),
+      sb.from("admin_messages").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
       sb.from("profiles").select("username").eq("id", uid).maybeSingle()
     ]);
     if (mR.error && missing(mR.error)) { main.innerHTML = needSql; return; }
     if (mR.error) throw mR.error;
-    const msgs = mR.data || [];
+    const msgs = (mR.data || []).sort((a, b) => (a.created_at < b.created_at ? 1 : -1));   // newest first
     const name = pR.data?.username || "Deleted account";
     if (!msgs.length) { go("messages"); return; }
     const open = new Set();
@@ -115,12 +116,17 @@ PAGES.messages = async function pageMessages(main, arg) {
       <div class="card accent">
         <div class="row"><div class="grow"><div class="tiny mono muted">FROM</div>
           <div style="font-size:20px;font-weight:700">${esc(name)}</div>
-          <div class="small muted">${msgs.length} message${msgs.length === 1 ? "" : "s"}, oldest first</div></div>
+          <div class="small muted">${msgs.length} post${msgs.length === 1 ? "" : "s"}, newest first</div></div>
           <button class="btn sm danger" data-delall>Delete all</button></div>
       </div>
-      ${msgs.map((m, i) => `
-        <div class="card msg-post" data-id="${m.id}">
-          <div class="row" style="margin-bottom:8px"><span class="tiny mono muted grow">#${i + 1} · ${fmtDateTime(m.created_at)}</span>
+      <div class="card">
+        <div class="card-h">Reply to ${esc(name)}</div>
+        <textarea class="input" rows="3" maxlength="${MAX}" data-reply placeholder="Your reply… ${esc(name)} sees it on their Contact Admin page"></textarea>
+        <button class="btn primary block" data-sendreply style="margin-top:8px" disabled>Send reply</button>
+      </div>
+      ${msgs.map((m) => `
+        <div class="card msg-post ${m.from_admin ? "msg-reply" : ""}" data-id="${m.id}">
+          <div class="row" style="margin-bottom:8px"><span class="tiny mono muted grow">${m.from_admin ? `<b class="msg-from-admin">YOU (ADMIN)</b>` : `<b>${esc(name)}</b>`} · ${fmtDateTime(m.created_at)}</span>
             <span class="tiny mono muted">${n(m.body.length)} chars</span></div>
           <div class="pre msg-body ${m.body.length > 1200 ? "clip" : ""}" data-body="${m.id}">${esc(m.body)}</div>
           ${m.body.length > 1200 ? `<button class="btn sm ghost block" data-more="${m.id}" style="margin-top:8px">Show all</button>` : ""}
@@ -132,6 +138,17 @@ PAGES.messages = async function pageMessages(main, arg) {
         </div>`).join("")}`;
 
     const byId = new Map(msgs.map((m) => [String(m.id), m]));
+    const rta = $("[data-reply]", main), rsend = $("[data-sendreply]", main);
+    rta.addEventListener("input", () => (rsend.disabled = !rta.value.trim()));
+    rsend.onclick = async () => {
+      const body = rta.value.trim();
+      if (!body) return;
+      O().btnBusy(rsend, true, "Sending…");
+      const { error: e } = await sb.from("admin_messages").insert({ user_id: uid, body, from_admin: true });
+      if (e) { O().btnBusy(rsend, false); return toast(/from_admin|row-level security/i.test(e.message || "") ? "Run the v1.30 SQL file first" : errMsg(e), true); }
+      toast(`Reply sent to ${name}`);
+      render();
+    };
     const remove = async (id) => {
       const { error: e } = await sb.from("admin_messages").delete().eq("id", id);
       if (e) { toast(errMsg(e), true); return false; }
@@ -158,7 +175,7 @@ PAGES.messages = async function pageMessages(main, arg) {
       if (await remove(m.id)) { toast(`Copied ${n(m.body.length)} characters and deleted`); render(); }
     }));
     $("[data-delall]", main).onclick = async () => {
-      if (!(await confirmBox({ title: `Delete all from ${name}?`, body: `All ${msgs.length} message${msgs.length === 1 ? "" : "s"} are removed from the database for good.`, ok: "Delete all", danger: true }))) return;
+      if (!(await confirmBox({ title: `Delete all from ${name}?`, body: `All ${msgs.length} post${msgs.length === 1 ? "" : "s"} (their messages and your replies) are removed from the database for good.`, ok: "Delete all", danger: true }))) return;
       const { error: e } = await sb.from("admin_messages").delete().eq("user_id", uid);
       if (e) return toast(errMsg(e), true);
       toast(`Deleted ${msgs.length} message${msgs.length === 1 ? "" : "s"}`);

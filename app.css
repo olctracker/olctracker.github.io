@@ -642,3 +642,6 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .count-pill { min-width: 26px; padding: 2px 8px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); font-size: 12px; text-align: center; }
 .msg-body { font-size: 14px; line-height: 1.45; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: none; overflow: hidden; }
 .msg-body.clip { max-height: 260px; -webkit-mask-image: linear-gradient(#000 75%, transparent); mask-image: linear-gradient(#000 75%, transparent); }
+.msg-reply { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.card.msg-reply { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.msg-from-admin { color: var(--accent); }
