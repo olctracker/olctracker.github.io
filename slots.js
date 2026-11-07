@@ -341,8 +341,17 @@ PAGES.siphon = async function pageSiphon(main) {
     if (view.over === "avg") { if (h === null) return null; v /= Math.max(h / 24, 1); }
     return v;
   };
-  const list = (data || []).map((x) => ({ ...x, m: metric(x) }))
+  const sorted = (data || []).map((x) => ({ ...x, m: metric(x) }))
     .sort((a, b) => (b.m ?? -1) - (a.m ?? -1) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
+  const list = sorted.filter((x) => !x.missing), gone = sorted.filter((x) => x.missing);
+  // both lists fold; open/closed remembered on this phone
+  const folds = (() => { try { return JSON.parse(localStorage.getItem("olc-siphon-folds") || "{}"); } catch (e) { return {}; } })();
+  const row = (x, missing) => `
+        <li><div class="lv-pill mono"><small>LV</small>${x.level ?? "—"}</div>
+          <div class="grow"><button class="linkish mono ip-row" data-copy="${esc(x.ip)}" aria-label="Copy ${esc(x.ip)}">${esc(x.ip)}</button>
+            <div class="tiny muted">${x.pct != null ? `${Number(x.pct)}%` : "—"} · ${esc(x.age ? x.age + " ago" : "—")} · ${missing ? "last seen " : ""}${fmtDate(x.updated_at)}${unit !== "total" ? ` · ${fmt(x.siphoned)} total` : ""}</div></div>
+          <div style="text-align:right"><b class="mono gain" style="display:block">${x.m == null ? "—" : fmt(x.m)}</b>${unit !== "total" ? `<span class="tiny mono muted">${unit}</span>` : ""}</div>
+          <button class="icon-btn" data-del="${esc(x.ip)}" aria-label="Remove">×</button></li>`;
   const total = list.reduce((s, x) => s + (Number(x.siphoned) || 0), 0);
   const unit = view.show === "pct" ? (view.over === "avg" ? "per 1% / day" : "per 1%") : (view.over === "avg" ? "/ day" : "total");
   const how = {
@@ -354,7 +363,7 @@ PAGES.siphon = async function pageSiphon(main) {
 
   main.innerHTML = `
     <div class="tiles">
-      <div class="tile big"><div class="k">Total siphoned</div><div class="v gain">${fmt(total)}</div><div class="s">${list.length} IP${list.length === 1 ? "" : "s"} on your list</div></div>
+      <div class="tile big"><div class="k">Total siphoned</div><div class="v gain">${fmt(total)}</div><div class="s">${list.length} IP${list.length === 1 ? "" : "s"} on your list${gone.length ? ` · ${gone.length} missing` : ""}</div></div>
     </div>
 
     <div class="card">
@@ -364,33 +373,50 @@ PAGES.siphon = async function pageSiphon(main) {
       <button class="btn primary block" data-save disabled style="margin-top:10px">Save siphon list</button>
     </div>
 
+    ${sorted.length ? `<div class="card">
+      <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">SHOW</div>
+      <div class="seg" style="margin-bottom:10px">
+        <button data-vshow="total" class="${view.show === "total" ? "on" : ""}">Total crypto</button>
+        <button data-vshow="pct" class="${view.show === "pct" ? "on" : ""}">Per 1%</button></div>
+      <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">OVER</div>
+      <div class="seg" style="margin-bottom:8px">
+        <button data-vover="all" class="${view.over === "all" ? "on" : ""}">Overall</button>
+        <button data-vover="avg" class="${view.over === "avg" ? "on" : ""}">Avg / day</button></div>
+      <div class="hint" style="margin:0 2px">${how} Both lists below use this order. Tap an IP to copy it.</div>
+    </div>` : ""}
+
     <div class="card">
-      <div class="card-h">My siphons<span class="r">${unit}</span></div>
-      ${list.length ? `
-        <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">SHOW</div>
-        <div class="seg" style="margin-bottom:10px">
-          <button data-vshow="total" class="${view.show === "total" ? "on" : ""}">Total crypto</button>
-          <button data-vshow="pct" class="${view.show === "pct" ? "on" : ""}">Per 1%</button></div>
-        <div class="tiny mono muted" style="letter-spacing:.14em;margin:0 2px 6px">OVER</div>
-        <div class="seg" style="margin-bottom:8px">
-          <button data-vover="all" class="${view.over === "all" ? "on" : ""}">Overall</button>
-          <button data-vover="avg" class="${view.over === "avg" ? "on" : ""}">Avg / day</button></div>
-        <div class="hint" style="margin:0 2px 10px">${how}</div>
-        <ul class="list">${list.map((x) => `
-        <li><div class="lv-pill mono"><small>LV</small>${x.level ?? "—"}</div>
-          <div class="grow"><span class="mono ip-row">${esc(x.ip)}</span>
-            <div class="tiny muted">${x.pct != null ? `${Number(x.pct)}%` : "—"} · ${esc(x.age ? x.age + " ago" : "—")} · ${fmtDate(x.updated_at)}${unit !== "total" ? ` · ${fmt(x.siphoned)} total` : ""}</div></div>
-          <div style="text-align:right"><b class="mono gain" style="display:block">${x.m == null ? "—" : fmt(x.m)}</b>${unit !== "total" ? `<span class="tiny mono muted">${unit}</span>` : ""}</div>
-          <button class="icon-btn" data-del="${esc(x.ip)}" aria-label="Remove">×</button></li>`).join("")}</ul>`
-        : `<div class="empty">Nothing saved yet. Paste your siphon list above.</div>`}
+      <details class="fold" data-fold="mine" ${folds.mine ? "open" : ""}><summary>My siphons <span class="tiny mono muted">· ${list.length} · ${unit}</span></summary>
+        ${list.length ? `<ul class="list" style="margin-top:10px">${list.map((x) => row(x, false)).join("")}</ul>`
+          : `<div class="empty">${gone.length ? "None on your last paste." : "Nothing saved yet. Paste your siphon list above."}</div>`}
+      </details>
     </div>
 
-    ${list.length ? `<div class="card danger-zone">
+    <div class="card">
+      <details class="fold" data-fold="gone" ${folds.gone ? "open" : ""}><summary>Missing siphons <span class="tiny mono muted">· ${gone.length}</span></summary>
+        <div class="hint" style="margin:8px 2px 0">On your list before but not in your latest paste. Kept so you can find the good ones again. Pasting them back takes them off this list.</div>
+        ${gone.length ? `<ul class="list" style="margin-top:10px">${gone.map((x) => row(x, true)).join("")}</ul>
+          <button class="btn danger block" data-delgone style="margin-top:12px">Delete all missing</button>`
+          : `<div class="empty">Nothing missing.</div>`}
+      </details>
+    </div>
+
+    ${sorted.length ? `<div class="card danger-zone">
       <div class="card-h">Reset</div>
       <p class="small muted" style="margin-top:0">Clears your siphon list only. Spam and crypto are untouched.</p>
       <button class="btn danger block" data-reboot>Reset siphon list</button>
     </div>` : ""}`;
 
+  $$("[data-fold]", main).forEach((d) => d.addEventListener("toggle", () => {
+    folds[d.dataset.fold] = d.open; try { localStorage.setItem("olc-siphon-folds", JSON.stringify(folds)); } catch (e) {}
+  }));
+  $$("[data-copy]", main).forEach((b) => (b.onclick = () => G().copy(b.dataset.copy)));
+  $("[data-delgone]", main) && ($("[data-delgone]", main).onclick = async () => {
+    if (!(await confirmBox({ title: `Delete ${gone.length} missing siphon${gone.length === 1 ? "" : "s"}?`, body: "Clears the missing list only. Your current siphons stay.", ok: "Delete", danger: true }))) return;
+    const { error } = await sb.from("siphon_slots").delete().eq("user_id", uid).eq("missing", true);
+    if (error) return toast(errMsg(error), true);
+    toast("Missing list cleared"); render();
+  });
   const setView = (k, v) => { view[k] = v; try { localStorage.setItem("olc-siphon-view", JSON.stringify(view)); } catch (e) {} render(); };
   $$("[data-vshow]", main).forEach((b) => (b.onclick = () => setView("show", b.dataset.vshow)));
   $$("[data-vover]", main).forEach((b) => (b.onclick = () => setView("over", b.dataset.vover)));
@@ -405,14 +431,22 @@ PAGES.siphon = async function pageSiphon(main) {
   save.onclick = async () => {
     O().btnBusy(save, true, "Saving…");
     const now = new Date().toISOString();
-    const rows = parsed.map((x) => ({ user_id: uid, ip: x.ip, level: x.level, pct: x.pct, siphoned: x.amount, age: x.age, updated_at: now }));
+    const rows = parsed.map((x) => ({ user_id: uid, ip: x.ip, level: x.level, pct: x.pct, siphoned: x.amount, age: x.age, updated_at: now, missing: false }));
     const { error } = await sb.from("siphon_slots").upsert(rows, { onConflict: "user_id,ip" });
     if (error) { O().btnBusy(save, false); return toast(errMsg(error), true); }
-    toast(`Saved ${rows.length} siphon entr${rows.length === 1 ? "y" : "ies"}`);
+    // anything on the list that wasn't in this paste moves to Missing (never marks the target active)
+    const pasted = new Set(rows.map((r) => r.ip));
+    const nowGone = list.filter((x) => !pasted.has(x.ip)).map((x) => x.ip);
+    if (nowGone.length) {
+      const r2 = await sb.from("siphon_slots").update({ missing: true }).eq("user_id", uid).in("ip", nowGone);
+      if (r2.error) { O().btnBusy(save, false); return toast(errMsg(r2.error), true); }
+    }
+    const back = gone.filter((x) => pasted.has(x.ip)).length;
+    toast(`Saved ${rows.length} siphon entr${rows.length === 1 ? "y" : "ies"}${nowGone.length ? ` · ${nowGone.length} now missing` : ""}${back ? ` · ${back} back from missing` : ""}`);
     render();
   };
   $$("[data-del]", main).forEach((b) => (b.onclick = async () => {
-    if (!(await confirmBox({ title: `Remove ${b.dataset.del}?`, body: "Removes it from your siphon list.", ok: "Remove", danger: true }))) return;
+    if (!(await confirmBox({ title: `Remove ${b.dataset.del}?`, body: "Removes it from this list.", ok: "Remove", danger: true }))) return;
     const { error } = await sb.from("siphon_slots").delete().eq("user_id", uid).eq("ip", b.dataset.del);
     if (error) return toast(errMsg(error), true);
     render();

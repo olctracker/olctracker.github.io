@@ -651,3 +651,8 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .msg-reply { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .card.msg-reply { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
 .msg-from-admin { color: var(--accent); }
+
+/* Siphon lists: tap an IP to copy */
+.linkish { background: none; border: 0; padding: 0; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.linkish.mono { font-family: "JetBrains Mono", monospace; }
+.linkish:active { color: var(--accent); }
