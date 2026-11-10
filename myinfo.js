@@ -225,6 +225,9 @@ PAGES.device = async function pageDevice(main) {
         ${d?.ip ? `<button class="icon-btn" data-copy aria-label="Copy IP">${IC.copy}</button>` : ""}
       </div>
       <div style="margin:8px 0 14px">${classPill(d)}</div>
+      <button class="ip-edit" data-slots style="width:100%;text-align:left;margin:0 0 10px">
+        <span class="tiny mono muted">SPAM SLOTS · </span><b class="mono">${d?.spam_slots ?? 64}</b>
+        <span class="tiny muted">${d?.spam_slots ? "" : "(normal)"} · tap to change</span></button>
       <div class="stats">
         <button class="stat" data-lvl><div class="k">Player level</div><div class="v">${dash(d?.player_level)}</div>${lvlSub(d)}</button>
         <button class="stat" data-num="keygen"><div class="k">Keygen</div><div class="v">${dash(d?.keygen)}</div></button>
@@ -304,6 +307,12 @@ PAGES.device = async function pageDevice(main) {
     const v = await textAsk("My wallet ID", d?.wallet, { placeholder: "e.g. wasd...518c",
       check: (s) => (/\s/.test(s) ? "Wallet ID can't contain spaces" : "") });
     if (v !== undefined) save({ wallet: v }, v ? "Wallet saved · hidden from the crew" : "Wallet removed");
+  };
+  $("[data-slots]", main).onclick = async () => {
+    const v = await numberAsk("Spam slots", d?.spam_slots ?? 64, "How many spam slots you have. 64 is normal; crew upgrades can add more. Reboots don't change it.");
+    if (v === undefined) return;
+    if (v < 1 || v > 999) return toast("Spam slots must be 1 to 999", true);
+    save({ spam_slots: v === 64 ? null : v }, `Spam slots: ${v}`);
   };
   $("[data-lvl]", main).onclick = async () => {
     const v = await levelAsk(d);

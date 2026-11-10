@@ -7,7 +7,7 @@
 const O = () => window.OLC;
 const G = () => window.OLC_GAME;
 const PAGES = (window.OLC_PAGES = window.OLC_PAGES || {});
-const MAX_SLOTS = 64;
+const DEFAULT_SLOTS = 64;      // the game's normal number of spam slots
 const HIGH_RATE = 100;            // current top earning per hour
 
 /* ---------- reading a pasted spam or siphon list ----------
@@ -166,6 +166,9 @@ async function loadSuggestions(mine) {
 
 /* ---------- the "My spam slots" section on the Spam page ---------- */
 async function mountSpamSlots(box) {
+  // My Device › Spam slots (crew upgrades can raise it above 64); empty = 64
+  const dev = await G().myDevice().catch(() => null);
+  const MAX_SLOTS = Number(dev?.spam_slots) > 0 ? Number(dev.spam_slots) : DEFAULT_SLOTS;
   const { sb, S, esc, $, $$, toast, errMsg, confirmBox } = O();
   const uid = S.profile.id;
   const [{ data: slots }, boxR] = await Promise.all([
