@@ -1,6 +1,6 @@
 /* =========================================================
    OLC Database — Software Coverage (Mods and Admin)
-   For each program and level 1–25: is there at least one saved,
+   For each program and level 1–60: is there at least one saved,
    not-scrambled IP with that program at exactly that level?
    Green = yes, red = missing. Read live from saved IPs every time.
    ========================================================= */
@@ -10,7 +10,7 @@ const O = () => window.OLC;
 const G = () => window.OLC_GAME;
 const PAGES = (window.OLC_PAGES = window.OLC_PAGES || {});
 
-const MAX_LV = 25;
+const MAX_LV = 60;
 const ROWS = [
   ["antivirus", "AV"], ["bypasser", "BP"], ["firewall", "FW"], ["password_cracker", "PC"], ["password_encryptor", "PE"],
   ["proxy", "PR"], ["rootkit", "RK"], ["siphon", "SI"], ["spam", "SP"], ["trace", "TR"]
