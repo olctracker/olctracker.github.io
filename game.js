@@ -528,6 +528,11 @@ PAGES.ip = async function pageTarget(main, ip) {
         <button class="icon-btn" data-copy aria-label="Copy IP">${IC.copy}</button>
       </div>
       <div style="margin:8px 0 14px">${badges(t)}</div>
+      ${t?.scrambled ? `<div class="newip-box" data-newipbox>
+        <div class="row"><span class="grow small"><b>Scrambled.</b> <span data-newipline class="muted">Looking for their new IP…</span></span></div>
+        <button class="btn sm primary block" data-moveip style="margin-top:10px">Add their new IP</button>
+        <div class="hint" style="margin-top:6px">Copies this profile (name, crew, level, rep, software) to the new IP and moves the wallet. Only the IP changes.</div>
+      </div>` : ""}
       <div class="who-box">
         <button class="who-row" data-edit-name><span class="k">Account</span><span class="v ${t?.account_name ? "" : "muted"}">${t?.account_name ? esc(t.account_name) : "Add name"}</span>${IC.chev}</button>
         <button class="who-row" data-edit-crew><span class="k">Crew</span><span class="v ${t?.crew_name ? "" : "muted"}">${t?.crew_name ? esc(t.crew_name) : "Add crew"}</span>${IC.chev}</button>
@@ -673,6 +678,29 @@ PAGES.ip = async function pageTarget(main, ip) {
     } catch (e) { toast(/removes_spam/.test(e.message || "") ? "Run the v1.29 SQL file first" : errMsg(e), true); }
   }));
   $("[data-scr]", main) && ($("[data-scr]", main).onclick = async () => { if (await askScrambled(ip)) refresh(); });
+  // Scrambled: show the player's newest IP, and move the profile to a new one
+  if (t?.scrambled) {
+    sb.rpc("scrambled_new_ip", { p_ips: [ip] }).then(({ data, error }) => {
+      const line = $("[data-newipline]", main);
+      if (!line) return;
+      const r = !error && (data || [])[0];
+      const VIA = { link: "moved here", wallet: "matched by wallet", name: "matched by account name (best guess)" };
+      line.classList.toggle("muted", !r);
+      line.innerHTML = r
+        ? `New IP: <a class="mono" href="${ipHref(r.new_ip)}">${esc(r.new_ip)}</a> <span class="tiny muted">· ${VIA[r.via] || ""}</span>`
+        : error ? "Run the v1.34 SQL file to find their new IP." : "No new IP known yet.";
+    });
+    $("[data-moveip]", main).onclick = async () => {
+      const v = await textDialog(`New IP for ${t.account_name || ip}`, "", "123.45.67.89");
+      if (v === undefined || v === null) return;
+      const nip = tidyIp(v);
+      if (!isFullIp(nip)) return toast("Enter a full IP like 123.45.67.89", true);
+      const { data, error } = await sb.rpc("move_to_new_ip", { p_old: ip, p_new: nip });
+      if (error) return toast(/move_to_new_ip|Could not find the function/i.test(error.message || "") ? "Run the v1.34 SQL file first" : errMsg(error), true);
+      toast(data?.existed ? `Moved to ${nip} (its saved info was kept, blanks filled in)` : `Moved to ${nip}`);
+      O().go("ip/" + encodeURIComponent(nip));
+    };
+  }
   $("[data-unscr]", main) && ($("[data-unscr]", main).onclick = async () => {
     try { await upsertTarget({ ip, scrambled: false }); toast("Scrambled removed"); refresh(); } catch (e) { toast(errMsg(e), true); }
   });
@@ -720,13 +748,31 @@ function targetRow(t, extra = "") {
   const { esc } = O();
   return `<li class="tap" data-goto="${esc(t.ip)}">
     <div class="grow"><div class="mono ip-row">${esc(t.ip)}</div>
-      ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}${t.reputation != null ? ` · REP ${fmtRep(t.reputation)}` : ""}</div>${extra}</div>
+      ${whoLine(t)}<div class="tiny muted">LV ${dash(t.player_level)} · FW ${dash(t.firewall)}${t.reputation != null ? ` · REP ${fmtRep(t.reputation)}` : ""}</div>${t.scrambled ? `<div class="tiny" data-newip="${esc(t.ip)}"></div>` : ""}${extra}</div>
     <div class="row-badges">${badges(t)}</div>
     <button class="icon-btn row-copy" data-rowcopy="${esc(t.ip)}" aria-label="Copy IP">${IC.copy}</button>${IC.chev}</li>`;
 }
 function bindRows(root) {
   O().$$("[data-goto]", root).forEach((li) => (li.onclick = () => O().go("ip/" + encodeURIComponent(li.dataset.goto))));
   O().$$("[data-rowcopy]", root).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); copy(b.dataset.rowcopy); }));
+  fillNewIps(root);
+}
+/* Scrambled rows: "→ new IP" for the player's newest IP (v1.34; quietly nothing before it) */
+async function fillNewIps(root) {
+  const { $$, esc, sb } = O();
+  const spots = $$("[data-newip]", root).filter((el) => !el.dataset.done);
+  if (!spots.length) return;
+  spots.forEach((el) => (el.dataset.done = "1"));
+  const { data, error } = await sb.rpc("scrambled_new_ip", { p_ips: [...new Set(spots.map((el) => el.dataset.newip))] });
+  if (error) return;
+  const map = new Map((data || []).map((r) => [r.ip, r]));
+  spots.forEach((el) => {
+    const r = map.get(el.dataset.newip);
+    if (!r) return;
+    el.innerHTML = `<span class="newip-arrow">→ new IP</span> <a class="mono" href="${ipHref(r.new_ip)}">${esc(r.new_ip)}</a>${r.via === "name" ? ` <span class="muted">(by name)</span>` : ""}`;
+    const a = el.querySelector("a");
+    if (a) a.onclick = (e) => e.stopPropagation();
+  });
 }
 
 /* =========================================================
