@@ -89,7 +89,55 @@ PAGES.top = async function pageTop(main) {
   if (!isAdmin()) { main.innerHTML = `<div class="card"><div class="empty">Admin only.</div></div>`; return; }
   const st = (() => { try { return JSON.parse(sessionStorage.getItem("olc-top") || "{}"); } catch (e) { return {}; } })();
   let tab = st.tab || "crypto", period = st.period || "day", sort = st.sort || "total", ssort = st.ssort === "pct" ? "avg" : (st.ssort || "amount");
-  const keep = () => { try { sessionStorage.setItem("olc-top", JSON.stringify({ tab, period, sort, ssort })); } catch (e) {} };
+  // FW filter: typed min / max, or Hackable (FW up to my Bypasser, +3 on Apex); FW order low→high or high→low
+  const num = (v) => (v === "" || v == null || !isFinite(Number(v)) ? null : Math.max(0, Math.round(Number(v))));
+  let fmin = num(st.fmin), fmax = num(st.fmax), hack = !!st.hack, fdir = st.fdir === "desc" ? "desc" : "asc";
+  const keep = () => { try { sessionStorage.setItem("olc-top", JSON.stringify({ tab, period, sort, ssort, fmin, fmax, hack, fdir })); } catch (e) {} };
+  const dev = await G().myDevice();
+  const hackLimit = dev && dev.bypasser != null ? Number(dev.bypasser) + (dev.device_class === "apex" ? 3 : 0) : null;
+  const range = () => {
+    const hi = hack && hackLimit != null ? (fmax != null ? Math.min(fmax, hackLimit) : hackLimit) : fmax;
+    return { lo: fmin, hi, on: fmin != null || hi != null };
+  };
+  const inRange = (ip) => {
+    const r = range(); if (!r.on) return true;
+    const t = sw.get(ip), fw = t && t.firewall != null ? Number(t.firewall) : null;
+    if (fw == null) return false;                       // no FW saved: left out while filtering
+    return (r.lo == null || fw >= r.lo) && (r.hi == null || fw <= r.hi);
+  };
+  const fwBar = (byFw) => {
+    const r = range();
+    return `<div class="fwbar">
+      <div class="row" style="gap:6px;align-items:center">
+        <span class="tiny mono muted">FW</span>
+        <input class="input mono fwnum" data-fmin inputmode="numeric" placeholder="min" value="${fmin ?? ""}">
+        <span class="muted">–</span>
+        <input class="input mono fwnum" data-fmax inputmode="numeric" placeholder="max" value="${fmax ?? ""}">
+        <button class="chip ${hack ? "on" : ""}" data-hack ${hackLimit == null ? "disabled" : ""}>Hackable${hackLimit != null ? ` ≤${hackLimit}` : ""}</button>
+        ${r.on ? `<button class="chip" data-fclear>Clear</button>` : ""}
+      </div>
+      ${hackLimit == null ? `<div class="tiny muted" style="margin-top:4px">Add your Bypasser on My Info to use Hackable.</div>` : ""}
+      ${byFw ? `<div class="chips" style="margin-top:6px">
+        <button class="chip ${fdir === "asc" ? "on" : ""}" data-fdir="asc">Lowest FW first</button>
+        <button class="chip ${fdir === "desc" ? "on" : ""}" data-fdir="desc">Highest FW first</button></div>` : ""}
+      ${r.on ? `<div class="tiny muted" style="margin-top:4px">Top 25 with FW ${r.lo != null && r.hi != null ? `${r.lo}–${r.hi}` : r.lo != null ? `${r.lo}+` : `up to ${r.hi}`}. IPs with no FW saved are left out.</div>` : ""}
+    </div>`;
+  };
+  const bindFw = () => {
+    const a = $("[data-fmin]", main), b = $("[data-fmax]", main);
+    if (a) a.onchange = () => { fmin = num(a.value); keep(); draw(); };
+    if (b) b.onchange = () => { fmax = num(b.value); keep(); draw(); };
+    [a, b].forEach((x) => x && x.addEventListener("keydown", (e) => { if (e.key === "Enter") x.blur(); }));
+    const h = $("[data-hack]", main); if (h) h.onclick = () => { hack = !hack; keep(); draw(); };
+    const c = $("[data-fclear]", main); if (c) c.onclick = () => { fmin = fmax = null; hack = false; keep(); draw(); };
+    $$("[data-fdir]", main).forEach((x) => (x.onclick = () => { fdir = x.dataset.fdir; keep(); draw(); }));
+  };
+  const fwCmp = (a, b) => {   // FW order; no FW saved always last
+    const x = fwOf(a), y = fwOf(b);
+    if (x === y) return 0;
+    if (x === Infinity) return 1; if (y === Infinity) return -1;
+    return fdir === "desc" ? y - x : x - y;
+  };
   const cache = {};
   let siphon = null;
 
@@ -127,21 +175,27 @@ PAGES.top = async function pageTop(main) {
 
   const fwOf = (ip) => { const t = sw.get(ip); return t && t.firewall != null ? Number(t.firewall) : Infinity; };
 
+  let wideMissing = false;
   async function drawCrypto() {
-    const key = period + "|" + (sort === "fw" ? "total" : sort);
+    // With an FW filter, look at the top 500 so there are still 25 left after filtering (v1.35 SQL)
+    const keyNow = () => period + "|" + (sort === "fw" ? "total" : sort) + (range().on && !wideMissing ? "|wide" : "");
+    const key = keyNow();
     if (!cache[key]) {
       main.innerHTML = head() + `<div class="loading">Loading</div>`; bind();
-      const { data, error } = await sb.rpc("server_top_crypto", { p_period: period, p_sort: sort === "fw" ? "total" : sort });
+      const p = { p_period: period, p_sort: sort === "fw" ? "total" : sort };
+      let { data, error } = key.endsWith("|wide") ? await sb.rpc("server_top_crypto_n", { ...p, p_limit: 500 }) : await sb.rpc("server_top_crypto", p);
+      if (error && key.endsWith("|wide") && missingFn(error)) { wideMissing = true; return drawCrypto(); }
       if (error) return fail(error);
       cache[key] = data || [];
     }
-    const keyNow = () => period + "|" + (sort === "fw" ? "total" : sort);
     if (tab !== "crypto" || key !== keyNow()) return;
     let rows = cache[key];
     await loadSw(rows.filter((r) => r.kind === "ip").map((r) => r.target));
     if (tab !== "crypto" || key !== keyNow()) return;
-    // By FW: the same top 25 (by total), lowest firewall first; no FW saved goes last
-    if (sort === "fw") rows = [...rows].sort((a, b) => fwOf(a.target) - fwOf(b.target) || Number(b.total || 0) - Number(a.total || 0));
+    if (range().on) rows = rows.filter((r) => r.kind === "ip" && inRange(r.target));
+    // By FW: lowest (or highest) firewall first; no FW saved goes last
+    if (sort === "fw") rows = [...rows].sort((a, b) => fwCmp(a.target, b.target) || Number(b.total || 0) - Number(a.total || 0));
+    rows = rows.slice(0, 25);
     const sum = rows.reduce((s, r) => s + Number(r.total || 0), 0);
     const name = (r) => r.kind === "ip" ? G().ipText(r.target) : `<span class="mono">${esc(r.target)}</span> <span class="badge">no IP</span>`;
     const who = (r) => {
@@ -161,15 +215,18 @@ PAGES.top = async function pageTop(main) {
           <button class="chip ${sort === "avg" ? "on" : ""}" data-s="avg">By average</button>
           <button class="chip ${sort === "fw" ? "on" : ""}" data-s="fw">By FW</button>
         </div>
+        ${fwBar(sort === "fw")}
+        ${range().on && wideMissing ? `<div class="hint">Only the top 25 are checked. Run the v1.35 SQL file to search past them.</div>` : ""}
         ${rows.length ? `<ol class="rank">${rows.map((r, i) => `
           <li data-r="${i}" class="tap"><span class="rk mono">${i + 1}</span>
             <div class="grow">${name(r)}${r.kind === "ip" ? swLine(r.target) : ""}
               <div class="tiny muted">${fmt(r.visit_count)} visit${Number(r.visit_count) === 1 ? "" : "s"} · avg ${fmt(r.avg_per_visit)}</div>
               <div class="tiny muted">by ${who(r)}</div></div>
             <b class="mono ${sort === "avg" ? "" : "gain"}">${fmt(sort === "avg" ? r.avg_per_visit : r.total)}</b></li>`).join("")}</ol>`
-          : `<div class="empty">No crypto logged by anyone ${pname()}.</div>`}
+          : `<div class="empty">${range().on ? "No targets in this FW range" : "No crypto logged by anyone"} ${pname()}.</div>`}
       </div>`;
     bind();
+    bindFw();
     $$("[data-s]", main).forEach((b) => (b.onclick = () => { sort = b.dataset.s; keep(); draw(); }));
     $$("[data-r]", main).forEach((li) => (li.onclick = (ev) => {
       if (ev.target.closest("a")) return;
@@ -204,14 +261,17 @@ PAGES.top = async function pageTop(main) {
     }
     if (tab !== "siphon") return;
     const from = periodStart(period);
-    const rows = siphon.filter((x) => period === "all" || (x.placed !== null && x.placed >= from))
+    let rows = siphon.filter((x) => period === "all" || (x.placed !== null && x.placed >= from))
       .sort((a, b) => ssort === "avg" ? (b.avg ?? -1) - (a.avg ?? -1) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0)
-        : (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0))
-      .slice(0, 25);
+        : (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
+    // With an FW filter, filter first and then take the top 25
+    rows = rows.slice(0, range().on ? 600 : 25);
     await loadSw(rows.map((x) => x.ip));
     if (tab !== "siphon") return;
-    // By FW: the same top 25 (by amount), lowest firewall first; no FW saved goes last
-    if (ssort === "fw") rows.sort((a, b) => fwOf(a.ip) - fwOf(b.ip) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
+    if (range().on) rows = rows.filter((x) => inRange(x.ip));
+    rows = rows.slice(0, 25);
+    // By FW: lowest (or highest) firewall first; no FW saved goes last
+    if (ssort === "fw") rows.sort((a, b) => fwCmp(a.ip, b.ip) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
     const sum = rows.reduce((s, x) => s + (Number(x.siphoned) || 0), 0);
     main.innerHTML = head() + `
       <div class="tiles">
@@ -225,6 +285,7 @@ PAGES.top = async function pageTop(main) {
           <button class="chip ${ssort === "avg" ? "on" : ""}" data-ss="avg">Avg / day</button>
           <button class="chip ${ssort === "fw" ? "on" : ""}" data-ss="fw">By FW</button>
         </div>
+        ${fwBar(ssort === "fw")}
         ${rows.length ? `<ol class="rank">${rows.map((x, i) => `
           <li><span class="rk mono">${i + 1}</span>
             <div class="grow">${G().ipText(x.ip)}${swLine(x.ip)}
@@ -232,9 +293,10 @@ PAGES.top = async function pageTop(main) {
               <div class="tiny muted">by ${esc(x.username)}</div></div>
             <button class="icon-btn" data-copy="${esc(x.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
             <b class="mono gain">${ssort === "avg" ? (x.avg != null ? fmt(Math.round(x.avg)) + "/day" : "—") : fmt(x.siphoned)}</b></li>`).join("")}</ol>`
-          : `<div class="empty">No siphon entries ${pname()}.</div>`}
+          : `<div class="empty">${range().on ? "No siphon entries in this FW range" : "No siphon entries"} ${pname()}.</div>`}
       </div>`;
     bind();
+    bindFw();
     $$("[data-ss]", main).forEach((b) => (b.onclick = () => { ssort = b.dataset.ss; keep(); draw(); }));
     $$("[data-copy]", main).forEach((b) => (b.onclick = () => G().copy(b.dataset.copy)));
   }

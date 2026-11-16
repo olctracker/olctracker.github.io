@@ -660,3 +660,7 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 /* scrambled IP → new IP */
 .newip-box { border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); background: var(--danger-soft); border-radius: 12px; padding: 10px 12px; margin: -4px 0 14px; }
 .newip-arrow { color: var(--accent); font-weight: 700; }
+.fwbar{margin:2px 0 10px}
+.fwbar .fwnum{width:54px;padding:8px 6px;text-align:center}
+.fwbar .chip{white-space:nowrap}
+.fwbar .chip[disabled]{opacity:.45}
