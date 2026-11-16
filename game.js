@@ -105,6 +105,35 @@ function readSoftwarePaste(text, opts = {}) {
    Wallet: "NAME's wallet" and the line after WALLET ADDRESS.
    Apps: "NAME's installed software" and the software levels.
    Device model, network and crypto amounts are not kept. */
+/* Keeps a player's IPs together with the newest on top: a scrambled IP goes right
+   under the IP it moved to (Move to new IP link, else same account name), oldest last. */
+function newestFirst(list) {
+  if (!list || list.length < 2) return list;
+  const by = new Map(list.map((t) => [t.ip, t]));
+  const live = new Map();       // account name -> a non-scrambled IP in this list
+  list.forEach((t) => { const n = (t.account_name || "").toLowerCase(); if (n && !t.scrambled && !live.has(n)) live.set(n, t.ip); });
+  const head = (t) => {          // the newest IP of this player that's in the list, and how many moves back t is
+    let cur = t, depth = 0;
+    const seen = new Set([t.ip]);
+    while (cur.scrambled) {
+      let nxt = cur.replaced_by && by.get(cur.replaced_by);
+      if (!nxt) { const n = (cur.account_name || "").toLowerCase(); nxt = n && live.has(n) ? by.get(live.get(n)) : null; }
+      if (!nxt || seen.has(nxt.ip)) break;
+      seen.add(nxt.ip); cur = nxt; depth++;
+    }
+    return { key: cur.ip, depth };
+  };
+  const groups = new Map();
+  list.forEach((t, i) => {
+    const h = head(t);
+    if (!groups.has(h.key)) groups.set(h.key, { at: i, rows: [] });
+    const g = groups.get(h.key); g.at = Math.min(g.at, i);
+    g.rows.push({ t, depth: h.depth, i });
+  });
+  return [...groups.values()].sort((a, b) => a.at - b.at)
+    .flatMap((g) => g.rows.sort((a, b) => a.depth - b.depth || (a.t.updated_at < b.t.updated_at ? 1 : -1) || a.i - b.i).map((r) => r.t));
+}
+
 function readTargetPaste(text) {
   const lines = String(text || "").split(/\r?\n/).map((l) => l.trim().replace(/\s+/g, " ")).filter(Boolean);
   const low = lines.map((l) => l.toLowerCase());
@@ -953,6 +982,7 @@ PAGES.lookup = async function pageLookup(main) {
     wallets = await dropCrew(wallets, (w) => [w.wallet, w.ip].filter(Boolean));
     ips = await dropCrew(ips, (t) => [t.ip]);
     named = await dropCrew(named, (t) => [t.ip]);
+    ips = newestFirst(ips); named = newestFirst(named);
     const full = [...new Set(wallets.map((w) => w.ip).filter(isFullIp))];
     const tmap = {};
     if (full.length) ((await sb.from("targets").select("*").in("ip", full)).data || []).forEach((t) => (tmap[t.ip] = t));
