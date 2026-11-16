@@ -664,3 +664,13 @@ details > summary.card-h::-webkit-details-marker { display: none; }
 .fwbar .fwnum{width:54px;padding:8px 6px;text-align:center}
 .fwbar .chip{white-space:nowrap}
 .fwbar .chip[disabled]{opacity:.45}
+/* Contributions */
+.contrib-log li{align-items:flex-start}
+.clog-ic{width:22px;flex:0 0 22px;text-align:center;font-weight:700;color:var(--muted)}
+.clog-ic.k-contrib{color:var(--gain,#3ddc84)}
+.clog-ic.k-upgrade,.clog-ic.k-surge,.clog-ic.k-upkeep{color:var(--warn,#f5b84a)}
+.list.compact li{padding:6px 0;min-height:0}
+.cap-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.08);margin-top:6px;overflow:hidden}
+.cap-bar span{display:block;height:100%;background:var(--accent)}
+.badge.on-olc{color:var(--accent);border-color:var(--accent)}
+details.roster summary{cursor:pointer;padding:6px 0}

@@ -135,6 +135,7 @@ const ICON = {
   route: I('<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h7a3 3 0 000-6H9a3 3 0 010-6h7"/>'),
   direct: I('<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M7.5 16.5L16.5 7.5"/>'),
   coverage: I('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5l2 2 4-4"/>'),
+  contrib: I('<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><rect x="4" y="17" width="16" height="4" rx="1"/>'),
   calc: I('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 18h8"/>'),
   builder: I('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
   mail: I('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
@@ -165,6 +166,7 @@ const NAV = [
   { id: "pleads", label: "Process Leads", icon: "pleads" },
   { id: "reboot", label: "Last Reboot", icon: "reboot" },
   { sec: "Crew" },
+  { id: "contrib", label: "Contributions", icon: "contrib" },
   { id: "calc", label: "Calculator", icon: "calc" },
   { id: "builder", label: "Character Builder", icon: "builder" },
   { id: "mod", label: "Mod Tools", icon: "mod", modOnly: true },
@@ -1109,6 +1111,8 @@ async function pageMod(main) {
     if (error) return toast(errMsg(error), true);
     render();
   });
+  // Crew member list (names only), used by Contributions
+  if (window.OLC_CONTRIB_ROSTER) await window.OLC_CONTRIB_ROSTER(main);
 }
 
 /* =========================================================
