@@ -111,20 +111,33 @@ function readTargetPaste(text) {
   const out = { names: [], screens: [] };
   const addName = (n, where) => { n = String(n || "").trim(); if (n && n.length <= 40) out.names.push({ name: n, where }); };
 
-  // Device Home: "LVL n" followed (past "//") by "REP n"
+  // Device Home, either layout:
+  //   old: "LVL 26" then (past "//") "REP 8,077"
+  //   new: "LVL", the reboot tag "R1" (optional), "62", then "REP", "133,322"
   for (let i = 0; i < low.length; i++) {
-    const lv = /^lvl\.?\s*(\d{1,4})$/.exec(low[i]);
-    if (!lv) continue;
-    let j = i + 1; while (j < low.length && /^\/\/\s*$/.test(low[j])) j++;
-    const rep = /^rep\.?\s*([\d,]{1,15})$/.exec(low[j] || "");
-    if (!rep) continue;
+    let lvl = null, rep = null;
+    const one = /^lvl\.?\s*(\d{1,4})$/.exec(low[i]);
+    if (one) {
+      let j = i + 1; while (j < low.length && /^\/\/\s*$/.test(low[j])) j++;
+      const r = /^rep\.?\s*([\d,]{1,15})$/.exec(low[j] || "");
+      if (r) { lvl = one[1]; rep = r[1]; }
+    } else if (/^lvl\.?$/.test(low[i])) {
+      let j = i + 1;
+      while (j < low.length && /^(r\d{1,3}|\/\/)$/.test(low[j])) j++;      // reboot tag
+      const n = /^(\d{1,4})$/.exec(low[j] || "");
+      let k = j + 1; while (k < low.length && /^\/\/\s*$/.test(low[k])) k++;
+      const r = /^rep\.?\s*([\d,]{1,15})?$/.exec(low[k] || "");
+      const rn = r && (r[1] || (/^([\d,]{1,15})$/.exec(low[k + 1] || "") || [])[1]);
+      if (n && rn) { lvl = n[1]; rep = rn; }
+    }
+    if (lvl == null) continue;
     out.screens.push("device");
-    out.player_level = Number(lv[1]);
-    out.reputation = Number(rep[1].replace(/,/g, ""));
+    out.player_level = Number(lvl);
+    out.reputation = Number(rep.replace(/,/g, ""));
     for (let k = i - 1; k >= 0 && k >= i - 5; k--) {
       const t = /^\[([^\[\]]{1,12})\]$/.exec(lines[k]);
       if (t) { out.crew_tag = t[1].trim(); continue; }
-      if (/^(_|badge|\/\/)$/i.test(lines[k])) continue;
+      if (/^(_|badge|\/\/|>)$/i.test(lines[k])) continue;
       if (/^enemy device home:?$/i.test(lines[k])) break;
       addName(lines[k], "Device"); break;
     }
