@@ -134,12 +134,16 @@ function readTargetPaste(text) {
     out.screens.push("device");
     out.player_level = Number(lvl);
     out.reputation = Number(rep.replace(/,/g, ""));
-    for (let k = i - 1; k >= 0 && k >= i - 5; k--) {
-      const t = /^\[([^\[\]]{1,12})\]$/.exec(lines[k]);
-      if (t) { out.crew_tag = t[1].trim(); continue; }
-      if (/^(_|badge|\/\/|>)$/i.test(lines[k])) continue;
-      if (/^enemy device home:?$/i.test(lines[k])) break;
-      addName(lines[k], "Device"); break;
+    // Name and crew: "> GhostDrop _ [GSEX]" on one line or split over several.
+    // Whatever is inside [ ] is the crew tag, never part of the name.
+    for (let k = i - 1; k >= 0 && k >= i - 6; k--) {
+      let l = lines[k];
+      if (/^enemy device home:?$/i.test(l)) break;
+      const t = /\[([^\[\]]{1,12})\]/.exec(l);
+      if (t) { if (!out.crew_tag) out.crew_tag = t[1].trim(); l = l.replace(/\[[^\[\]]*\]/g, " "); }
+      l = l.replace(/^\s*>\s*/, "").replace(/(^|\s)_+(\s|$)/g, " ").replace(/\s+/g, " ").trim();
+      if (!l || /^(badge|\/\/)$/i.test(l)) continue;
+      addName(l, "Device"); break;
     }
     break;
   }
