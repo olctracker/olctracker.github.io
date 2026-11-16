@@ -222,14 +222,16 @@ PAGES.top = async function pageTop(main) {
             <div class="grow">${name(r)}${r.kind === "ip" ? swLine(r.target) : ""}
               <div class="tiny muted">${fmt(r.visit_count)} visit${Number(r.visit_count) === 1 ? "" : "s"} · avg ${fmt(r.avg_per_visit)}</div>
               <div class="tiny muted">by ${who(r)}</div></div>
+            <button class="icon-btn" data-copy="${esc(r.target)}" aria-label="Copy ${r.kind === "ip" ? "IP" : "wallet ID"}">${G().IC.copy}</button>
             <b class="mono ${sort === "avg" ? "" : "gain"}">${fmt(sort === "avg" ? r.avg_per_visit : r.total)}</b></li>`).join("")}</ol>`
           : `<div class="empty">${range().on ? "No targets in this FW range" : "No crypto logged by anyone"} ${pname()}.</div>`}
       </div>`;
     bind();
     bindFw();
     $$("[data-s]", main).forEach((b) => (b.onclick = () => { sort = b.dataset.s; keep(); draw(); }));
+    $$("[data-copy]", main).forEach((x) => (x.onclick = (ev) => { ev.stopPropagation(); G().copy(x.dataset.copy); }));
     $$("[data-r]", main).forEach((li) => (li.onclick = (ev) => {
-      if (ev.target.closest("a")) return;
+      if (ev.target.closest("a,[data-copy]")) return;
       const r = rows[Number(li.dataset.r)];
       modal(`<h3 class="mono">${esc(r.target)}</h3>
         <p class="small">${fmt(r.total)} total · ${fmt(r.visit_count)} visits · avg ${fmt(r.avg_per_visit)} · last ${ago(r.last_at)}</p>
