@@ -147,7 +147,7 @@ PAGES.top = async function pageTop(main) {
     const need = [...new Set(ips.filter((ip) => G().isFullIp(ip) && !sw.has(ip)))];
     for (let i = 0; i < need.length; i += 150) {
       const c = need.slice(i, i + 150);
-      const { data } = await sb.from("targets").select("ip,firewall,password_encryptor").in("ip", c);
+      const { data } = await sb.from("targets").select("ip,firewall,password_encryptor,scrambled").in("ip", c);
       c.forEach((ip) => sw.set(ip, null));
       (data || []).forEach((t) => sw.set(t.ip, t));
     }
@@ -173,18 +173,21 @@ PAGES.top = async function pageTop(main) {
   };
   const fail = (e) => { main.innerHTML = head() + (missingFn(e) ? needUpdate() : `<div class="card"><div class="card-h">Error</div><p>${esc(errMsg(e))}</p></div>`); bind(); };
 
+  const scrambled = (ip) => !!(sw.get(ip) && sw.get(ip).scrambled);   // scrambled IPs never show here
   const fwOf = (ip) => { const t = sw.get(ip); return t && t.firewall != null ? Number(t.firewall) : Infinity; };
 
   let wideMissing = false;
   async function drawCrypto() {
     // With an FW filter, look at the top 500 so there are still 25 left after filtering (v1.35 SQL)
-    const keyNow = () => period + "|" + (sort === "fw" ? "total" : sort) + (range().on && !wideMissing ? "|wide" : "");
+    // Always look past 25 so scrambled IPs can be dropped and the list still has 25
+    const keyNow = () => period + "|" + (sort === "fw" ? "total" : sort) + (wideMissing ? "" : range().on ? "|wide500" : "|wide100");
     const key = keyNow();
     if (!cache[key]) {
       main.innerHTML = head() + `<div class="loading">Loading</div>`; bind();
       const p = { p_period: period, p_sort: sort === "fw" ? "total" : sort };
-      let { data, error } = key.endsWith("|wide") ? await sb.rpc("server_top_crypto_n", { ...p, p_limit: 500 }) : await sb.rpc("server_top_crypto", p);
-      if (error && key.endsWith("|wide") && missingFn(error)) { wideMissing = true; return drawCrypto(); }
+      const wide = key.includes("|wide");
+      let { data, error } = wide ? await sb.rpc("server_top_crypto_n", { ...p, p_limit: key.endsWith("500") ? 500 : 100 }) : await sb.rpc("server_top_crypto", p);
+      if (error && wide && missingFn(error)) { wideMissing = true; return drawCrypto(); }
       if (error) return fail(error);
       cache[key] = data || [];
     }
@@ -192,6 +195,7 @@ PAGES.top = async function pageTop(main) {
     let rows = cache[key];
     await loadSw(rows.filter((r) => r.kind === "ip").map((r) => r.target));
     if (tab !== "crypto" || key !== keyNow()) return;
+    rows = rows.filter((r) => !(r.kind === "ip" && scrambled(r.target)));
     if (range().on) rows = rows.filter((r) => r.kind === "ip" && inRange(r.target));
     // By FW: lowest (or highest) firewall first; no FW saved goes last
     if (sort === "fw") rows = [...rows].sort((a, b) => fwCmp(a.target, b.target) || Number(b.total || 0) - Number(a.total || 0));
@@ -267,9 +271,10 @@ PAGES.top = async function pageTop(main) {
       .sort((a, b) => ssort === "avg" ? (b.avg ?? -1) - (a.avg ?? -1) || (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0)
         : (Number(b.siphoned) || 0) - (Number(a.siphoned) || 0));
     // With an FW filter, filter first and then take the top 25
-    rows = rows.slice(0, range().on ? 600 : 25);
+    rows = rows.slice(0, range().on ? 600 : 100);
     await loadSw(rows.map((x) => x.ip));
     if (tab !== "siphon") return;
+    rows = rows.filter((x) => !scrambled(x.ip));
     if (range().on) rows = rows.filter((x) => inRange(x.ip));
     rows = rows.slice(0, 25);
     // By FW: lowest (or highest) firewall first; no FW saved goes last
