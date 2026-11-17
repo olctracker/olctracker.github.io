@@ -74,10 +74,14 @@ function parseLog(text, now = Date.now()) {
 function keyOf(e) {
   const n = (e.name || "").toLowerCase();
   if (e.kind === "contrib") return `c|${n}`;
+  if (e.kind === "upkeep") return "u";
   if (e.kind === "power") return `p|${n}|${e.base || e.line.replace(/\s*·\s*toggled.*$/i, "").toLowerCase()}`;
   return `${e.kind}|${e.line.toLowerCase()}`;
 }
-const GROWS = new Set(["contrib", "power"]);
+// Entries the game keeps adding to: a contribution (2,000 → 3,000 if nobody else gave),
+// a power toggle count, and the day's upkeep (−8,515 → −12,801, moving up the log).
+const GROWS = new Set(["contrib", "power", "upkeep"]);
+const size = (e) => Math.abs(Number(e.amount || 0));
 
 /* ---------- lining a paste up with what's saved ---------- */
 // S: saved events, oldest first ({seq,kind,name,amount,line,at,prec,key}); P: the paste, oldest first.
@@ -88,15 +92,15 @@ function lineUp(S, P) {
     if (s.key !== p.key) return null;
     if (GROWS.has(s.kind)) {
       if (Number(s.amount) === Number(p.amount)) return near(s, p) ? "same" : null;
-      if (sLast && Number(p.amount) > Number(s.amount)) return "grow";       // merged since it was saved
-      if (pLast && Number(p.amount) < Number(s.amount)) return "stale";      // this paste was copied earlier
+      if (sLast && size(p) > size(s)) return "grow";       // added to since it was saved
+      if (pLast && size(p) < size(s)) return "stale";      // this paste was copied earlier
       return null;
     }
     return near(s, p) ? "same" : null;
   }
   function tryAlign(Sv) {
-    const sLast = { contrib: lastOf(Sv, "contrib"), power: lastOf(Sv, "power") };
-    const pLast = { contrib: lastOf(P, "contrib"), power: lastOf(P, "power") };
+    const sLast = { contrib: lastOf(Sv, "contrib"), power: lastOf(Sv, "power"), upkeep: lastOf(Sv, "upkeep") };
+    const pLast = { contrib: lastOf(P, "contrib"), power: lastOf(P, "power"), upkeep: lastOf(P, "upkeep") };
     let best = null;
     for (let d = Sv.length - 1; d > -P.length; d--) {               // P[0] sits at Sv[d]
       const from = Math.max(0, d), to = Math.min(Sv.length, d + P.length);
@@ -117,11 +121,15 @@ function lineUp(S, P) {
   }
   if (!S.length) return { added: P, ups: [], known: 0, older: 0, mode: "first" };
 
-  // 1. as is; 2. the newest saved contribution / power-on moved up because it grew
-  const variants = [{ Sv: S, moved: [] }];
-  ["contrib", "power"].forEach((k) => { const i = lastOf(S, k); if (i >= 0) variants.push({ Sv: S.filter((_, j) => j !== i), moved: [S[i]] }); });
-  const ic = lastOf(S, "contrib"), ip = lastOf(S, "power");
-  if (ic >= 0 && ip >= 0) variants.push({ Sv: S.filter((_, j) => j !== ic && j !== ip), moved: [S[ic], S[ip]] });
+  // 1. as is; 2. the newest saved contribution / power-on / upkeep moved up the log because it grew
+  // (every combination of those, fewest moved first)
+  const lasts = ["contrib", "power", "upkeep"].map((k) => lastOf(S, k)).filter((i) => i >= 0);
+  const variants = [];
+  for (let mask = 0; mask < 1 << lasts.length; mask++) {
+    const out = lasts.filter((_, b) => mask & (1 << b));
+    variants.push({ Sv: S.filter((_, j) => !out.includes(j)), moved: out.map((i) => S[i]), n: out.length });
+  }
+  variants.sort((a, b) => a.n - b.n);
 
   for (const v of variants) {
     const b = tryAlign(v.Sv);
@@ -131,7 +139,7 @@ function lineUp(S, P) {
     const ups = b.ups.map((u) => ({ seq: u.s.seq, from: u.s.amount, e: u.p }));
     let okMoved = true;
     for (const mv of v.moved) {                      // must show up again, bigger, among the new lines
-      const k = added.findIndex((e) => e.key === mv.key && Number(e.amount) > Number(mv.amount));
+      const k = added.findIndex((e) => e.key === mv.key && size(e) > size(mv));
       if (k < 0 || !reachesEnd) { okMoved = false; break; }
       ups.push({ seq: mv.seq, from: mv.amount, e: added[k] });
       added = added.filter((_, j) => j !== k);
@@ -387,7 +395,7 @@ PAGES.contrib = async function pageContrib(main) {
         joined: `${p.known} already saved${p.older ? ` · ${p.older} older than the saved log (skipped)` : ""}.`,
         old: `Everything here is already saved. This paste is older than the last one.`,
         gap: `This doesn't connect to the saved log: nothing in it matches. Entries between the last paste and this one may be missing. Save only if that's OK.`,
-        nomatch: `This doesn't line up with the saved log, so it isn't saved (it could count things twice). Copy a fresh log from the game and paste again.`
+        nomatch: `This doesn't line up with the saved log, so it isn't saved (it could count things twice). Copy the whole log from the very top and paste again. If it still won't line up, message the Admin.`
       }[p.mode];
       const contribNew = p.added.filter((e) => e.kind === "contrib").reduce((s, e) => s + e.amount, 0);
       const contribGrow = p.ups.reduce((s, u) => s + (u.e.amount - u.from), 0);
