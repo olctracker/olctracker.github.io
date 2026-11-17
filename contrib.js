@@ -154,43 +154,59 @@ function lineUpCore(S, P) {
   return { added: [], ups: [], known: 0, older: 0, mode: "nomatch" };
 }
 
-/* Daily upkeep: a running total that always floats to the top of the game's log and goes
-   up or down as boosts are turned on and off. So it's left out when lining pastes up;
-   the newest saved upkeep is "live" and simply takes the paste's amount, and a newer
-   day's upkeep line is added as new. Older, finished upkeep lines are matched as is. */
+/* Lining a paste up with the saved log:
+   - Contributions decide it. They're what's counted, and the game keeps them in order.
+   - Upgrades, surges, power toggles and member removals are matched one by one (same line,
+     about the same time), because the game drops some of them from the log later.
+   - Daily upkeep is a running total that always floats to the top and goes up or down as
+     boosts are turned on and off: the newest saved upkeep is "live" and simply takes the
+     paste's amount; a newer day's upkeep line is added as new. */
 function lineUp(Sall, Pall) {
-  const isU = (e) => e.kind === "upkeep";
-  const S = Sall.filter((e) => !isU(e)), P = Pall.filter((e) => !isU(e));
-  const SU = Sall.filter(isU), PU = Pall.filter(isU);
-  const r = S.length || !SU.length ? lineUpCore(S, P) : { added: P, ups: [], known: 0, older: 0, mode: "joined" };
-  if (r.mode === "nomatch" || !PU.length) return r;
+  const isC = (e) => e.kind === "contrib", isU = (e) => e.kind === "upkeep";
+  const r = lineUpCore(Sall.filter(isC), Pall.filter(isC));
+  if (r.mode === "nomatch") return r;
   const tol = (a, b) => (a.prec + b.prec) * 60e3 + 15 * 60e3;
   const near = (a, b) => Math.abs(a.at - b.at) <= tol(a, b);
+  const ups = [...r.ups], add = [];
+  let known = r.known;
+  const oldest = Sall.length ? Sall.reduce((m, e) => Math.min(m, e.at - e.prec * 60e3), Infinity) : -Infinity;
+
+  // upgrades, surges, power, removals, anything else
+  const SO = Sall.filter((e) => !isC(e) && !isU(e)), used = new Set();
+  for (const p of Pall.filter((e) => !isC(e) && !isU(e))) {
+    const s = SO.find((x) => !used.has(x.seq) && x.key === p.key && near(x, p) &&
+      (x.kind !== "power" || Number(p.amount) >= Number(x.amount)));
+    if (s) {
+      used.add(s.seq); known++;
+      if (s.kind === "power" && Number(p.amount) > Number(s.amount) && r.mode !== "old") ups.push({ seq: s.seq, from: s.amount, e: p });
+      continue;
+    }
+    if (r.mode !== "old" && p.at >= oldest) add.push(p);
+  }
+
+  // daily upkeep
+  const SU = Sall.filter(isU), PU = Pall.filter(isU);
   const live = SU[SU.length - 1] || null, closed = SU.slice(0, -1);
-  const used = new Set();
   let rest = PU.filter((p) => {
     const s = closed.find((x) => !used.has(x.seq) && Number(x.amount) === Number(p.amount) && near(x, p));
-    if (s) { used.add(s.seq); r.known++; return false; }
+    if (s) { used.add(s.seq); known++; return false; }
     return true;
   });
-  const ups = [...r.ups], add = [];
-  if (r.mode === "old") return r;                           // an older paste never changes upkeep
-  if (live) {
-    // older than the saved live one: this copy is older, leave upkeep as saved
-    rest = rest.filter((p) => p.at >= live.at - (p.prec > 1 ? tol(live, p) : 2 * 60e3));
-    const p = rest.shift();
-    if (p) {
-      if (Number(p.amount) !== Number(live.amount)) ups.push({ seq: live.seq, from: live.amount, e: p });
-      else r.known++;
-    }
-  } else if (Sall.length) {
-    const last = Sall[Sall.length - 1];
-    rest = rest.filter((p) => p.at >= last.at - tol(last, p));
+  if (r.mode !== "old") {
+    if (live) {
+      // older than the saved live one: this copy is older, leave upkeep as saved
+      rest = rest.filter((p) => p.at >= live.at - (p.prec > 1 ? tol(live, p) : 2 * 60e3));
+      const p = rest.shift();
+      if (p) {
+        if (Number(p.amount) !== Number(live.amount)) ups.push({ seq: live.seq, from: live.amount, e: p });
+        else known++;
+      }
+    } else rest = rest.filter((p) => p.at >= oldest);
+    add.push(...rest);
   }
-  add.push(...rest);
   const keepSet = new Set([...r.added, ...add]);
   const added = Pall.filter((e) => keepSet.has(e));        // in the game's own order
-  return { ...r, added, ups };
+  return { ...r, added, ups, known };
 }
 
 /* ---------- time helpers (game days reset 00:00 UTC, weeks start Monday) ---------- */
