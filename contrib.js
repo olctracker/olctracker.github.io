@@ -78,14 +78,14 @@ function keyOf(e) {
   if (e.kind === "power") return `p|${n}|${e.base || e.line.replace(/\s*·\s*toggled.*$/i, "").toLowerCase()}`;
   return `${e.kind}|${e.line.toLowerCase()}`;
 }
-// Entries the game keeps adding to: a contribution (2,000 → 3,000 if nobody else gave),
-// a power toggle count, and the day's upkeep (−8,515 → −12,801, moving up the log).
-const GROWS = new Set(["contrib", "power", "upkeep"]);
+// Entries the game keeps adding to: a contribution (2,000 → 3,000 if nobody else gave)
+// and a power toggle count. Daily upkeep is handled on its own (see upkeepPlan).
+const GROWS = new Set(["contrib", "power"]);
 const size = (e) => Math.abs(Number(e.amount || 0));
 
 /* ---------- lining a paste up with what's saved ---------- */
 // S: saved events, oldest first ({seq,kind,name,amount,line,at,prec,key}); P: the paste, oldest first.
-function lineUp(S, P) {
+function lineUpCore(S, P) {
   const lastOf = (arr, kind) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i].kind === kind) return i; return -1; };
   const near = (s, p) => Math.abs(s.at - p.at) <= (s.prec + p.prec) * 60e3 + 15 * 60e3;
   function match(s, p, sLast, pLast) {
@@ -99,8 +99,8 @@ function lineUp(S, P) {
     return near(s, p) ? "same" : null;
   }
   function tryAlign(Sv) {
-    const sLast = { contrib: lastOf(Sv, "contrib"), power: lastOf(Sv, "power"), upkeep: lastOf(Sv, "upkeep") };
-    const pLast = { contrib: lastOf(P, "contrib"), power: lastOf(P, "power"), upkeep: lastOf(P, "upkeep") };
+    const sLast = { contrib: lastOf(Sv, "contrib"), power: lastOf(Sv, "power") };
+    const pLast = { contrib: lastOf(P, "contrib"), power: lastOf(P, "power") };
     let best = null;
     for (let d = Sv.length - 1; d > -P.length; d--) {               // P[0] sits at Sv[d]
       const from = Math.max(0, d), to = Math.min(Sv.length, d + P.length);
@@ -121,9 +121,9 @@ function lineUp(S, P) {
   }
   if (!S.length) return { added: P, ups: [], known: 0, older: 0, mode: "first" };
 
-  // 1. as is; 2. the newest saved contribution / power-on / upkeep moved up the log because it grew
+  // 1. as is; 2. the newest saved contribution / power-on moved up the log because it grew
   // (every combination of those, fewest moved first)
-  const lasts = ["contrib", "power", "upkeep"].map((k) => lastOf(S, k)).filter((i) => i >= 0);
+  const lasts = ["contrib", "power"].map((k) => lastOf(S, k)).filter((i) => i >= 0);
   const variants = [];
   for (let mask = 0; mask < 1 << lasts.length; mask++) {
     const out = lasts.filter((_, b) => mask & (1 << b));
@@ -152,6 +152,45 @@ function lineUp(S, P) {
   const oldestP = P[0];
   if (oldestP && oldestP.at - lastS.at >= -((oldestP.prec + lastS.prec) * 60e3)) return { added: P, ups: [], known: 0, older: 0, mode: "gap" };
   return { added: [], ups: [], known: 0, older: 0, mode: "nomatch" };
+}
+
+/* Daily upkeep: a running total that always floats to the top of the game's log and goes
+   up or down as boosts are turned on and off. So it's left out when lining pastes up;
+   the newest saved upkeep is "live" and simply takes the paste's amount, and a newer
+   day's upkeep line is added as new. Older, finished upkeep lines are matched as is. */
+function lineUp(Sall, Pall) {
+  const isU = (e) => e.kind === "upkeep";
+  const S = Sall.filter((e) => !isU(e)), P = Pall.filter((e) => !isU(e));
+  const SU = Sall.filter(isU), PU = Pall.filter(isU);
+  const r = S.length || !SU.length ? lineUpCore(S, P) : { added: P, ups: [], known: 0, older: 0, mode: "joined" };
+  if (r.mode === "nomatch" || !PU.length) return r;
+  const tol = (a, b) => (a.prec + b.prec) * 60e3 + 15 * 60e3;
+  const near = (a, b) => Math.abs(a.at - b.at) <= tol(a, b);
+  const live = SU[SU.length - 1] || null, closed = SU.slice(0, -1);
+  const used = new Set();
+  let rest = PU.filter((p) => {
+    const s = closed.find((x) => !used.has(x.seq) && Number(x.amount) === Number(p.amount) && near(x, p));
+    if (s) { used.add(s.seq); r.known++; return false; }
+    return true;
+  });
+  const ups = [...r.ups], add = [];
+  if (r.mode === "old") return r;                           // an older paste never changes upkeep
+  if (live) {
+    // older than the saved live one: this copy is older, leave upkeep as saved
+    rest = rest.filter((p) => p.at >= live.at - (p.prec > 1 ? tol(live, p) : 2 * 60e3));
+    const p = rest.shift();
+    if (p) {
+      if (Number(p.amount) !== Number(live.amount)) ups.push({ seq: live.seq, from: live.amount, e: p });
+      else r.known++;
+    }
+  } else if (Sall.length) {
+    const last = Sall[Sall.length - 1];
+    rest = rest.filter((p) => p.at >= last.at - tol(last, p));
+  }
+  add.push(...rest);
+  const keepSet = new Set([...r.added, ...add]);
+  const added = Pall.filter((e) => keepSet.has(e));        // in the game's own order
+  return { ...r, added, ups };
 }
 
 /* ---------- time helpers (game days reset 00:00 UTC, weeks start Monday) ---------- */
@@ -398,12 +437,12 @@ PAGES.contrib = async function pageContrib(main) {
         nomatch: `This doesn't line up with the saved log, so it isn't saved (it could count things twice). Copy the whole log from the very top and paste again. If it still won't line up, message the Admin.`
       }[p.mode];
       const contribNew = p.added.filter((e) => e.kind === "contrib").reduce((s, e) => s + e.amount, 0);
-      const contribGrow = p.ups.reduce((s, u) => s + (u.e.amount - u.from), 0);
+      const contribGrow = p.ups.filter((u) => u.e.kind === "contrib").reduce((s, u) => s + (u.e.amount - u.from), 0);
       prev.innerHTML = `
         <div class="${p.mode === "nomatch" || p.mode === "gap" ? "err" : "hint"}" style="margin-bottom:8px">${msg}</div>
-        ${p.added.length || p.ups.length ? `<div class="small" style="margin-bottom:6px"><b>${p.added.length}</b> new${p.ups.length ? ` · <b>${p.ups.length}</b> grown` : ""} · <span class="gain">+${fmt(contribNew + contribGrow)}</span> contributed</div>` : ""}
+        ${p.added.length || p.ups.length ? `<div class="small" style="margin-bottom:6px"><b>${p.added.length}</b> new${p.ups.length ? ` · <b>${p.ups.length}</b> updated` : ""} · <span class="gain">+${fmt(contribNew + contribGrow)}</span> contributed</div>` : ""}
         ${warn.length ? `<div class="err" style="margin-bottom:8px">Over 50,000 in one day: ${warn.map((w) => `<b>${esc(w.name)}</b> ${fmt(w.sum)} (${w.day})`).join(", ")}. Check this isn't counted twice.</div>` : ""}
-        ${p.ups.length ? `<ul class="list compact">${p.ups.map((u) => `<li><span class="clog-ic k-${u.e.kind}">${ICONS[u.e.kind]}</span><span class="small grow">${esc(u.e.name)}: ${fmt(u.from)} → <b>${fmt(u.e.amount)}</b></span></li>`).join("")}</ul>` : ""}
+        ${p.ups.length ? `<ul class="list compact">${p.ups.map((u) => `<li><span class="clog-ic k-${u.e.kind}">${ICONS[u.e.kind]}</span><span class="small grow">${u.e.kind === "upkeep" ? "Daily upkeep" : esc(u.e.name)}: ${fmt(u.from)} → <b>${fmt(u.e.amount)}</b></span></li>`).join("")}</ul>` : ""}
         ${p.added.length ? `<ul class="list compact">${[...p.added].reverse().slice(0, 25).map((e) => `<li><span class="clog-ic k-${e.kind}">${ICONS[e.kind]}</span><span class="small grow">${esc(e.line)}</span><span class="tiny muted">${agoText(e.at, e.prec)}</span></li>`).join("")}</ul>
           ${p.added.length > 25 ? `<div class="tiny muted">…and ${p.added.length - 25} more</div>` : ""}` : ""}`;
       plan = p;
