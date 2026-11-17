@@ -304,9 +304,12 @@ PAGES.device = async function pageDevice(main) {
     if (v !== undefined) save({ ip: v ? tidyIp(v) : null }, v ? "IP saved · hidden from the crew" : "IP removed");
   };
   $("[data-wallet]", main).onclick = async () => {
-    const v = await textAsk("My wallet ID", d?.wallet, { placeholder: "e.g. wasd...518c",
-      check: (s) => (/\s/.test(s) ? "Wallet ID can't contain spaces" : "") });
-    if (v !== undefined) save({ wallet: v }, v ? "Wallet saved · hidden from the crew" : "Wallet removed");
+    const v = await textAsk("My wallet ID", d?.wallet, { placeholder: "Paste your full wallet address",
+      check: (s) => (/\s/.test(s.trim()) ? "Wallet ID can't contain spaces" : "") });
+    if (v === undefined) return;
+    // saved the way logs show it (first 6 ... last 4), so it matches your wallet in logs
+    const w = G().shortWallet(v);
+    save({ wallet: w || null }, w ? `Wallet saved as ${w} · hidden from the crew` : "Wallet removed");
   };
   $("[data-slots]", main).onclick = async () => {
     const v = await numberAsk("Spam slots", d?.spam_slots ?? 64, "How many spam slots you have. 64 is normal; crew upgrades can add more. Reboots don't change it.");

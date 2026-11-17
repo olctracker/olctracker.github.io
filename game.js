@@ -40,6 +40,12 @@ const isFullIp = (s) => {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(s || "").trim());
   return !!m && m.slice(1).every((n) => Number(n) <= 255);
 };
+// The game shows a wallet in full only on its owner's Wallet screen; logs show it cut down
+// to the first 6 and last 4 (hxff7c...d522). Wallets are saved that short way so they match.
+const shortWallet = (w) => {
+  const t = String(w || "").trim().replace(/\s+/g, "").replace(/…/g, "...");
+  return /^[a-z0-9]{12,}$/i.test(t) ? `${t.slice(0, 6)}...${t.slice(-4)}` : t;
+};
 const tidyIp = (s) => String(s || "").replace(/\s+/g, "").replace(/,/g, ".");
 const tidyTerm = (s) => String(s || "").trim().replace(/[^A-Za-z0-9._-]/g, "");
 const dash = (v) => (v === null || v === undefined || v === "" ? "—" : v);
@@ -192,7 +198,7 @@ function readTargetPaste(text) {
   }
   // Wallet
   const wAt = low.indexOf("wallet address");
-  if (wAt >= 0 && /^[a-z0-9]{6,80}$/i.test(lines[wAt + 1] || "")) { out.wallet = lines[wAt + 1]; out.screens.push("wallet"); }
+  if (wAt >= 0 && /^[a-z0-9]{6,80}$/i.test(lines[wAt + 1] || "")) { out.wallet = shortWallet(lines[wAt + 1]); out.screens.push("wallet"); }
   lines.forEach((l) => {
     let m = /^(.+?)['’]s wallet$/i.exec(l);
     if (m) { addName(m[1], "Wallet"); if (!out.screens.includes("wallet")) out.screens.push("wallet"); }
@@ -954,7 +960,8 @@ PAGES.lookup = async function pageLookup(main) {
   const out = $("[data-out]", main), input = $("input", main), repOut = $("[data-rep]", main);
 
   const show = async (raw) => {
-    const term = tidyTerm(raw);
+    let term = tidyTerm(raw);
+    if (/^[a-z0-9]{20,}$/i.test(term)) term = shortWallet(term);   // a full wallet address: logs only have the short form
     sessionStorage.setItem("olc-lookup", term);
     out.innerHTML = `<div class="loading" style="min-height:120px">Searching</div>`;
     let wallets = [], ips = [], named = [];
@@ -1363,5 +1370,5 @@ PAGES.add = async function pageAdd(main, prefill) {
 
 /* shared with later page modules */
 window.OLC_GAME = { IC, copy, isFullIp, ipText, badges, dash, tidyIp, PROGRAMS, upsertTarget, addIp,
-  readSoftwarePaste, myDevice, setMyDevice, crewSet, crewInfo, dropCrew, crewCard, CREW_MSG };
+  readSoftwarePaste, shortWallet, myDevice, setMyDevice, crewSet, crewInfo, dropCrew, crewCard, CREW_MSG };
 })();
