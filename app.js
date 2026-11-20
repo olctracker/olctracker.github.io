@@ -30,6 +30,7 @@ const emailFor = (u) => `${u.trim().toLowerCase()}@${CFG.emailDomain}`;
 const pwFor = (pin) => `olc#${pin}#pin`;
 const isMod = () => S.profile && ["mod", "admin"].includes(S.profile.role);
 const isAdmin = () => S.profile && S.profile.role === "admin";
+const hasIml = () => S.profile && (S.profile.iml || S.profile.role === "admin");
 const hasCompanion = () => S.profile && (S.profile.companion || S.profile.role === "admin");
 const fmtDate = (d) => new Date(d).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 const fmtDateTime = (d) => new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -138,6 +139,7 @@ const ICON = {
   contrib: I('<path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><rect x="4" y="17" width="16" height="4" rx="1"/>'),
   calc: I('<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h.01M12 11h.01M16 11h.01M8 15h.01M12 15h.01M16 15h.01M8 18h8"/>'),
   builder: I('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>'),
+  list: I('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/>'),
   mail: I('<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>'),
   formulas: I('<path d="M5 4h14v16H5z"/><path d="M8 8h3M9.5 6.5v3M13 8h3M8 14l3 3M11 14l-3 3M13 15.5h3"/>'),
   reboot: I('<path d="M4 4v6h6"/><path d="M5.5 15a7 7 0 102-8.1L4 10"/>')
@@ -176,6 +178,7 @@ const NAV = [
   { id: "import", label: "Import IPs", icon: "upload", adminOnly: true },
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" },
+  { id: "iml", label: "IP Master List", icon: "list", imlOnly: true },
   { id: "companion", label: "Companion", icon: "device", companionOnly: true },
   { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true },
   { id: "messages", label: "Messages", icon: "mail", adminOnly: true },
@@ -211,6 +214,7 @@ function routeFromHash() {
   if (item.adminOnly && !isAdmin()) return "home";
   if (item.notAdmin && isAdmin()) return "messages";
   if (item.companionOnly && !hasCompanion()) return "home";
+  if (item.imlOnly && !hasIml()) return "home";
   return r;
 }
 
@@ -414,7 +418,7 @@ function buildShell() {
 }
 
 function renderNav() {
-  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()) && !(n.notAdmin && isAdmin()) && !(n.companionOnly && !hasCompanion()));
+  const items = NAV.filter((n) => !(n.modOnly && !isMod()) && !(n.adminOnly && !isAdmin()) && !(n.notAdmin && isAdmin()) && !(n.companionOnly && !hasCompanion()) && !(n.imlOnly && !hasIml()));
   $("#nav").innerHTML = items.map((n) => n.sec
     ? `<div class="nav-sec">${esc(n.sec)}</div>`
     : `<a href="#/${n.id}" class="${(S.route === "ip" || S.route === "add" ? "lookup" : S.route) === n.id ? "active" : ""}">${ICON[n.icon]}<span>${esc(n.label)}</span>
@@ -767,7 +771,7 @@ async function pageMod(main) {
       <div class="card-h">Members<span class="r">${members.length}</span></div>
       <ul class="list">${members.map((p) => `
         <li><div class="grow"><div class="who">${esc(p.username)}${p.id === S.profile.id ? ` <span class="muted tiny">(you)</span>` : ""}</div>
-          <div class="tiny muted">Joined ${fmtDate(p.created_at)}${p.skip_checks ? ` · <span class="badge">skips checks</span>` : ""}${isAdmin() && (p.companion || p.role === "admin") ? ` · <span class="badge">companion</span>` : ""}</div></div>
+          <div class="tiny muted">Joined ${fmtDate(p.created_at)}${p.skip_checks ? ` · <span class="badge">skips checks</span>` : ""}${isAdmin() && (p.companion || p.role === "admin") ? ` · <span class="badge">companion</span>` : ""}${isAdmin() && p.iml && p.role !== "admin" ? ` · <span class="badge">IML</span>` : ""}</div></div>
           <span class="badge ${p.role}">${p.role}</span>
           ${canManage(p) ? `<button class="icon-btn" data-manage="${p.id}" aria-label="Manage ${esc(p.username)}">${ICON.dots}</button>` : `<span style="width:44px"></span>`}
         </li>`).join("")}</ul>
@@ -904,6 +908,7 @@ async function pageMod(main) {
       ${isAdmin() ? `<button class="sheet-btn" data-act="role">${p.role === "mod" ? "Remove Mod (make Member)" : "Make Mod"}</button>
         <button class="sheet-btn" data-act="skip">${p.skip_checks ? "Include in activity checks &amp; polls" : "Skip activity checks &amp; polls"}</button>
         ${p.role === "admin" ? "" : `<button class="sheet-btn" data-act="comp">${p.companion ? "Turn off Companion access" : "Give Companion access"}</button>`}
+        ${p.role === "admin" ? "" : `<button class="sheet-btn" data-act="iml">${p.iml ? "Turn off IP Master List" : "Give IP Master List access"}</button>`}
         ${p.companion || p.role === "admin" ? `<button class="sheet-btn" data-act="phone">Reset Companion phone${p.companion_device ? "" : " (none set yet)"}</button>` : ""}` : ""}
       <button class="sheet-btn danger" data-act="del">Delete account</button>
       <button class="btn block" data-act="close" style="margin-top:10px">Cancel</button>`,
@@ -944,6 +949,16 @@ async function pageMod(main) {
           const { error } = await sb.rpc("set_companion", { p_id: p.id, p_on: on });
           if (error) return toast(errMsg(error), true);
           toast(on ? "Companion access on" : "Companion access off"); render();
+        });
+        $("[data-act=iml]", w) && ($("[data-act=iml]", w).onclick = async () => {
+          close();
+          const on = !p.iml;
+          if (!(await confirmBox({ title: on ? `Give ${p.username} the IP Master List?` : `Turn off the IP Master List for ${p.username}?`,
+            body: on ? "They can see the shared IP Master List under You, paste IPs into it and check them off."
+                     : "It disappears from their menu. IPs they added stay on the list.", ok: "Confirm" }))) return;
+          const { error } = await sb.rpc("set_iml", { p_id: p.id, p_on: on });
+          if (error) return toast(errMsg(error), true);
+          toast(on ? "IP Master List on" : "IP Master List off"); render();
         });
         $("[data-act=phone]", w) && ($("[data-act=phone]", w).onclick = async () => {
           close();
