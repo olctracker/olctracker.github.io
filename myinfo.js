@@ -365,8 +365,10 @@ async function loadTargets() {
   return out;
 }
 
-/* Builds the guide. Returns { cards, notFound, keygenWait, unknown } */
-function buildGuide(d, targets) {
+/* Builds the guide. Returns { cards, notFound, keygenWait, unknown }.
+   [ready]: IPs checked off as already bypassed. One of those with the level needed is
+   picked before any other IP at that level, whatever its firewall (it's ready to use). */
+function buildGuide(d, targets, ready = new Set()) {
   const keygen = d.keygen, limit = bypassLimit(d);
   const plans = [], notFound = [], keygenWait = [], unknown = [];
   for (const p of G().PROGRAMS) {
@@ -376,16 +378,20 @@ function buildGuide(d, targets) {
     if (goal > keygen) { keygenWait.push(p); continue; }
     const cand = targets.filter((t) => t[p.key] != null && t[p.key] > mine && t[p.key] <= keygen);
     if (!cand.length) { notFound.push({ p, mine, goal }); continue; }
-    // best = closest level up (exactly my next level if anyone has it), then lowest firewall
+    // best = closest level up (exactly my next level if anyone has it), then an already
+    // bypassed (checked off) IP, then lowest firewall
     const best = (list) => {
       if (!list.length) return null;
       const lvl = Math.min(...list.map((t) => t[p.key]));
       const atLvl = list.filter((t) => t[p.key] === lvl);
-      const fw = Math.min(...atLvl.map((t) => t.firewall));
-      return { lvl, fw, ties: atLvl.filter((t) => t.firewall === fw) };
+      const bypassed = atLvl.filter((t) => ready.has(t.ip));
+      const pool = bypassed.length ? bypassed : atLvl;
+      const fw = Math.min(...pool.map((t) => t.firewall));
+      return { lvl, fw, ties: pool.filter((t) => t.firewall === fw), ready: bypassed.length > 0 };
     };
     const main = best(cand);
-    const safer = main.fw > limit ? best(cand.filter((t) => t.firewall <= limit)) : null;
+    // already bypassed: no need for a safer (lower firewall) one
+    const safer = !main.ready && main.fw > limit ? best(cand.filter((t) => t.firewall <= limit)) : null;
     plans.push({ p, mine, goal, main, safer });
   }
   // ties at the same firewall: prefer the IP that is also the pick for the most other apps
@@ -398,7 +404,7 @@ function buildGuide(d, targets) {
     const m = choose(pl.main), s = choose(pl.safer);
     const row = { p: pl.p, mine: pl.mine, lvl: m.lvl, fw: m.fw, skip: skips(pl.goal, m.lvl),
       safer: s && { ip: s.t.ip, fw: s.fw, lvl: s.lvl, skip: skips(pl.goal, s.lvl) } };
-    if (!byIp.has(m.t.ip)) byIp.set(m.t.ip, { ip: m.t.ip, fw: m.fw, rows: [] });
+    if (!byIp.has(m.t.ip)) byIp.set(m.t.ip, { ip: m.t.ip, fw: m.fw, ready: ready.has(m.t.ip), rows: [] });
     byIp.get(m.t.ip).rows.push(row);
   }
   const cards = [...byIp.values()].sort((a, b) => b.rows.length - a.rows.length || a.fw - b.fw);
@@ -406,11 +412,11 @@ function buildGuide(d, targets) {
 }
 
 /* IPs the guide would pick for each app's next 3 levels (its main picks and safer picks), one entry per IP. */
-function soonIps(d, targets, rounds = 3) {
+function soonIps(d, targets, rounds = 3, ready = new Set()) {
   const out = new Map();
   let cur = { ...d };
   for (let i = 0; i < rounds; i++) {
-    const g = buildGuide(cur, targets);
+    const g = buildGuide(cur, targets, ready);
     if (!g.cards.length) break;
     const next = { ...cur };
     for (const c of g.cards) {
@@ -472,10 +478,10 @@ PAGES.leveling = async function pageLeveling(main) {
 
   let targets = (await loadTargets()).filter((t) => t.ip !== d.ip && G().isFullIp(t.ip));
   targets = await G().dropCrew(targets, (t) => [t.ip]);
-  const g = buildGuide(d, targets);
   await loadSoonDb().catch(() => { soonDb = null; });
   const done = soonDone();
-  const soonAll = soonIps(d, targets);
+  const g = buildGuide(d, targets, done);
+  const soonAll = soonIps(d, targets, 3, done);
   saveSoonDone(done, soonAll).catch(() => {});      // keeps Companion's copy of the list up to date
   const soon = soonAll.filter((x) => !done.has(x.ip));
   const hidden = soonAll.length - soon.length;
@@ -489,7 +495,7 @@ PAGES.leveling = async function pageLeveling(main) {
         <div class="row">
           <div class="fw-pill mono ${c.fw > g.limit ? "over" : ""}"><small>FW</small>${c.fw}</div>
           <div class="grow"><a class="mono ip-row" href="#/ip/${encodeURIComponent(c.ip)}">${esc(c.ip)}</a>
-            <div class="tiny muted">${c.rows.length} app${c.rows.length === 1 ? "" : "s"}</div></div>
+            <div class="tiny muted">${c.rows.length} app${c.rows.length === 1 ? "" : "s"}${c.ready ? ` · <span class="gain">✓ already bypassed</span>` : ""}</div></div>
           <button class="icon-btn" data-copy="${esc(c.ip)}" aria-label="Copy IP">${IC.copy}</button>
         </div>
         ${c.rows.map((r) => `
