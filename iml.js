@@ -14,11 +14,19 @@ const PAGES = (window.OLC_PAGES = window.OLC_PAGES || {});
 // Something shaped like an IP inside any text: 4 parts, each digits or hidden (x, *, ?).
 const IN_TEXT = /(?<![\w.*?])[\dxX*?]{1,3}(?:\.[\dxX*?]{1,3}){3}(?![\w*?]|\.[\dxX*?])/g;
 
-/** IPs from pasted text: { ips, ignored } — hidden parts become xxx; 3+ hidden or bad parts ignored. */
+// A firewall only counts when it's labelled FW right after the IP on the same line
+// ("1.2.3.4 FW 37", "1.2.3.4 · FW 37"); a bare number is never read as a firewall.
+const FW_AFTER = /^[ \t]*[·:,|-]?[ \t]*FW[ \t]*:?[ \t]*(\d{1,6})(?!\d)/i;
+
+/** IPs from pasted text: { ips, fws, ignored } — hidden parts become xxx; 3+ hidden or bad parts ignored. fws[i] is ips[i]'s firewall or null. */
 function parseIps(text) {
-  const ips = [], seen = new Set();
+  const ips = [], fws = [], seen = new Map();
   let ignored = 0;
-  for (const raw of String(text || "").match(IN_TEXT) || []) {
+  const src = String(text || "");
+  for (const m of src.matchAll(IN_TEXT)) {
+    const raw = m[0];
+    const fwm = FW_AFTER.exec(src.slice(m.index + raw.length, m.index + raw.length + 40).split(/[\r\n]/)[0]);
+    const fw = fwm ? Number(fwm[1]) : null;
     let hidden = 0, ok = true;
     const parts = raw.split(".").map((p) => {
       if (/^[xX*?]+$/.test(p)) { hidden++; return "xxx"; }
@@ -27,9 +35,10 @@ function parseIps(text) {
     });
     if (!ok || hidden > 2) { ignored++; continue; }
     const ip = parts.join(".");
-    if (!seen.has(ip)) { seen.add(ip); ips.push(ip); }
+    if (!seen.has(ip)) { seen.set(ip, ips.length); ips.push(ip); fws.push(fw); }
+    else if (fw != null) fws[seen.get(ip)] = fw;
   }
-  return { ips, ignored };
+  return { ips, fws, ignored };
 }
 
 const missing = (e) => e && (e.code === "42P01" || e.code === "PGRST205" || /iml_ips/i.test(e.message || ""));
@@ -50,7 +59,7 @@ PAGES.iml = async function pageIml(main) {
   const plural = (n) => `${n} IP${n === 1 ? "" : "s"}`;
 
   const row = (r) => `<div class="row soon-row">
-      <div class="grow"><span class="mono">${esc(r.ip)}</span>
+      <div class="grow"><span class="mono">${esc(r.ip)}</span>${r.fw != null ? ` <span class="muted">· FW ${esc(String(r.fw))}</span>` : ""}
         <div class="tiny muted">${KIND[r.hidden] || ""}${r.added_by_name ? ` · added by ${esc(r.added_by_name)}` : ""}${r.done && r.done_by_name ? ` · done by ${esc(r.done_by_name)}` : ""}</div></div>
       <button class="icon-btn" data-copy="${esc(r.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
       ${r.done
@@ -93,7 +102,8 @@ PAGES.iml = async function pageIml(main) {
     const { ips, ignored } = parseIps(box.value);
     addBtn.disabled = !ips.length;
     addBtn.textContent = ips.length ? `Add ${plural(ips.length)}` : "Add";
-    if (box.value.trim()) prev.textContent = `${plural(ips.length)} found` + (ignored ? ` · ${ignored} left out (3+ hidden parts)` : "");
+    const withFw = parseIps(box.value).fws.filter((f) => f != null).length;
+    if (box.value.trim()) prev.textContent = `${plural(ips.length)} found` + (withFw ? ` · ${withFw} with FW` : "") + (ignored ? ` · ${ignored} left out (3+ hidden parts)` : "");
   };
   box.oninput = update;
   $("[data-fromclip]", main).onclick = async () => {
@@ -101,10 +111,12 @@ PAGES.iml = async function pageIml(main) {
     catch (e) { box.focus(); toast("Couldn't read the clipboard: hold in the box and tap Paste", true); }
   };
   addBtn.onclick = async () => {
-    const { ips } = parseIps(box.value);
+    const { ips, fws } = parseIps(box.value);
     if (!ips.length) return;
     btnBusy(addBtn, true, "Adding…");
-    const { data: res, error: e } = await sb.rpc("iml_add", { p_ips: ips });
+    const { data: res, error: e } = fws.some((f) => f != null)
+      ? await sb.rpc("iml_add_fw", { p_ips: ips, p_fws: fws })
+      : await sb.rpc("iml_add", { p_ips: ips });
     btnBusy(addBtn, false);
     if (e) return toast(errMsg(e), true);
     toast(`Added ${res.added}` + (res.dup ? ` · ${res.dup} already on the list` : "") + (res.ignored ? ` · ${res.ignored} left out` : ""));
