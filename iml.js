@@ -53,14 +53,23 @@ PAGES.iml = async function pageIml(main) {
       : `<div class="card"><div class="card-h">Error</div><p>${esc(errMsg(error))}</p></div>`;
     return;
   }
-  const rows = data || [];
+  // Check marks are personal: each account only sees its own.
+  const { data: mine, error: e2 } = await sb.from("iml_done").select("ip_id, done_at");
+  if (e2) {
+    main.innerHTML = missing(e2) || e2.code === "42P01"
+      ? `<div class="card warn"><div class="card-h">Database update needed</div><p class="small" style="margin:0">This page needs the latest database update.</p></div>`
+      : `<div class="card"><div class="card-h">Error</div><p>${esc(errMsg(e2))}</p></div>`;
+    return;
+  }
+  const doneAt = new Map((mine || []).map((d) => [d.ip_id, d.done_at]));
+  const rows = (data || []).map((r) => ({ ...r, done: doneAt.has(r.id), done_at: doneAt.get(r.id) || null }));
   const open = rows.filter((r) => !r.done);
   const done = rows.filter((r) => r.done).sort((a, b) => String(b.done_at).localeCompare(String(a.done_at)));
   const plural = (n) => `${n} IP${n === 1 ? "" : "s"}`;
 
   const row = (r) => `<div class="row soon-row">
       <div class="grow"><span class="mono">${esc(r.ip)}</span>${r.fw != null ? ` <span class="muted">· FW ${esc(String(r.fw))}</span>` : ""}
-        <div class="tiny muted">${KIND[r.hidden] || ""}${r.added_by_name ? ` · added by ${esc(r.added_by_name)}` : ""}${r.done && r.done_by_name ? ` · done by ${esc(r.done_by_name)}` : ""}</div></div>
+        <div class="tiny muted">${KIND[r.hidden] || ""}${r.added_by_name ? ` · added by ${esc(r.added_by_name)}` : ""}</div></div>
       <button class="icon-btn" data-copy="${esc(r.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
       ${r.done
         ? `<button class="btn sm ghost" data-undo="${r.id}" aria-label="Move back to the list">↺</button>`
@@ -93,7 +102,7 @@ PAGES.iml = async function pageIml(main) {
       </div>
     </div>
     <div class="card">
-      <div class="card-h">Complete<span class="r">${plural(done.length)}</span></div>
+      <div class="card-h">Complete <span class="tiny muted">(only you see your check marks)</span><span class="r">${plural(done.length)}</span></div>
       ${done.length ? done.map(row).join("") : `<div class="empty">Check an IP off above to move it here.</div>`}
     </div>`;
 
@@ -140,7 +149,7 @@ PAGES.iml = async function pageIml(main) {
   $$("[data-undo]", main).forEach((b) => (b.onclick = () => setDone(b.dataset.undo, false)));
 
   $("[data-delcomplete]", main).onclick = async () => {
-    if (!(await confirmBox({ title: `Delete ${plural(done.length)} from Complete?`, body: "They're removed for everyone who uses the list.", ok: "Delete", danger: true }))) return;
+    if (!(await confirmBox({ title: `Delete ${plural(done.length)} from Complete?`, body: "The IPs you checked off are removed from the list for everyone who uses it.", ok: "Delete", danger: true }))) return;
     const { error: e } = await sb.rpc("iml_delete", { p_all: false });
     if (e) return toast(errMsg(e), true);
     toast("Complete cleared"); render();
