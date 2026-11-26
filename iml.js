@@ -78,7 +78,7 @@ async function pageList(main, L) {
   const plural = (n) => `${n} IP${n === 1 ? "" : "s"}`;
 
   const row = (r) => `<div class="row soon-row">
-      <div class="grow"><span class="mono">${esc(r.ip)}</span>${r.fw != null ? ` <span class="muted">· FW ${esc(String(r.fw))}</span>` : ""}
+      <div class="grow">${r.hidden ? `<span class="mono">${esc(r.ip)}</span>` : `<a class="mono" href="#/ip/${encodeURIComponent(r.ip)}">${esc(r.ip)}</a>`}${r.fw != null ? ` <span class="muted">· FW ${esc(String(r.fw))}</span>` : ""}
         <div class="tiny muted">${KIND[r.hidden] || ""}${r.added_by_name ? ` · added by ${esc(r.added_by_name)}` : ""}</div></div>
       <button class="icon-btn" data-copy="${esc(r.ip)}" aria-label="Copy IP">${G().IC.copy}</button>
       ${r.done
