@@ -41,12 +41,22 @@ function parseIps(text) {
   return { ips, fws, ignored };
 }
 
-const missing = (e) => e && (e.code === "42P01" || e.code === "PGRST205" || /iml_ips/i.test(e.message || ""));
+const missing = (e) => e && (e.code === "42P01" || e.code === "PGRST205" || /(iml|aml)_(ips|done)/i.test(e.message || ""));
 const KIND = ["Full IP", "One hidden", "Two hidden"];
 
-PAGES.iml = async function pageIml(main) {
+// Both lists work the same: the IP Master List (shared with members the Admin
+// turns it on for) and the Admin Master List (Admin only, its own IPs).
+const LISTS = {
+  iml: { title: "IP Master List", short: "IML", ips: "iml_ips", done: "iml_done", add: "iml_add", addFw: "iml_add_fw", setDone: "iml_set_done", del: "iml_delete", who: " for everyone who uses it" },
+  aml: { title: "Admin Master List", short: "AML", ips: "aml_ips", done: "aml_done", add: "aml_add", addFw: "aml_add", setDone: "aml_set_done", del: "aml_delete", who: "" }
+};
+
+PAGES.iml = (main) => pageList(main, LISTS.iml);
+PAGES.aml = (main) => pageList(main, LISTS.aml);
+
+async function pageList(main, L) {
   const { sb, esc, $, $$, toast, confirmBox, btnBusy, errMsg, render } = O();
-  const { data, error } = await sb.from("iml_ips").select("*").order("hidden").order("added_at").order("id");
+  const { data, error } = await sb.from(L.ips).select("*").order("hidden").order("added_at").order("id");
   if (error) {
     main.innerHTML = missing(error)
       ? `<div class="card warn"><div class="card-h">Database update needed</div><p class="small" style="margin:0">This page needs the latest database update.</p></div>`
@@ -54,7 +64,7 @@ PAGES.iml = async function pageIml(main) {
     return;
   }
   // Check marks are personal: each account only sees its own.
-  const { data: mine, error: e2 } = await sb.from("iml_done").select("ip_id, done_at");
+  const { data: mine, error: e2 } = await sb.from(L.done).select("ip_id, done_at");
   if (e2) {
     main.innerHTML = missing(e2) || e2.code === "42P01"
       ? `<div class="card warn"><div class="card-h">Database update needed</div><p class="small" style="margin:0">This page needs the latest database update.</p></div>`
@@ -82,7 +92,7 @@ PAGES.iml = async function pageIml(main) {
 
   main.innerHTML = `
     <div class="card">
-      <div class="card-h">IP Master List<span class="r">${plural(open.length)}</span></div>
+      <div class="card-h">${L.title}<span class="r">${plural(open.length)}</span></div>
       <textarea class="input" rows="2" data-paste placeholder="Paste IPs… (words are ignored)" style="min-height:0"></textarea>
       <div class="row" style="margin-top:8px">
         <button class="btn ghost grow" data-fromclip>Paste</button>
@@ -93,7 +103,7 @@ PAGES.iml = async function pageIml(main) {
     <div class="card">
       ${open.length ? grouped(open) : `<div class="empty">Nothing on the list. Paste some IPs above.</div>`}
       <div class="row wrap" style="margin-top:12px;gap:8px">
-        <button class="btn grow" data-copyiml ${open.length ? "" : "disabled"}>${G().IC.copy} Copy IML</button>
+        <button class="btn grow" data-copyiml ${open.length ? "" : "disabled"}>${G().IC.copy} Copy ${L.short}</button>
         <button class="btn ghost grow" data-copyall ${rows.length ? "" : "disabled"}>${G().IC.copy} Copy all</button>
       </div>
       <div class="row wrap" style="margin-top:8px;gap:8px">
@@ -124,8 +134,8 @@ PAGES.iml = async function pageIml(main) {
     if (!ips.length) return;
     btnBusy(addBtn, true, "Adding…");
     const { data: res, error: e } = fws.some((f) => f != null)
-      ? await sb.rpc("iml_add_fw", { p_ips: ips, p_fws: fws })
-      : await sb.rpc("iml_add", { p_ips: ips });
+      ? await sb.rpc(L.addFw, { p_ips: ips, p_fws: fws })
+      : await sb.rpc(L.add, { p_ips: ips });
     btnBusy(addBtn, false);
     if (e) return toast(errMsg(e), true);
     toast(`Added ${res.added}` + (res.dup ? ` · ${res.dup} already on the list` : "") + (res.ignored ? ` · ${res.ignored} left out` : ""));
@@ -141,7 +151,7 @@ PAGES.iml = async function pageIml(main) {
   $("[data-copyall]", main).onclick = () => copyText([...open, ...done].map((r) => r.ip).join("\n"), rows.length);
 
   const setDone = async (id, on) => {
-    const { error: e } = await sb.rpc("iml_set_done", { p_id: Number(id), p_done: on });
+    const { error: e } = await sb.rpc(L.setDone, { p_id: Number(id), p_done: on });
     if (e) return toast(errMsg(e), true);
     render();
   };
@@ -149,16 +159,16 @@ PAGES.iml = async function pageIml(main) {
   $$("[data-undo]", main).forEach((b) => (b.onclick = () => setDone(b.dataset.undo, false)));
 
   $("[data-delcomplete]", main).onclick = async () => {
-    if (!(await confirmBox({ title: `Delete ${plural(done.length)} from Complete?`, body: "The IPs you checked off are removed from the list for everyone who uses it.", ok: "Delete", danger: true }))) return;
-    const { error: e } = await sb.rpc("iml_delete", { p_all: false });
+    if (!(await confirmBox({ title: `Delete ${plural(done.length)} from Complete?`, body: `The IPs you checked off are removed from the list${L.who}.`, ok: "Delete", danger: true }))) return;
+    const { error: e } = await sb.rpc(L.del, { p_all: false });
     if (e) return toast(errMsg(e), true);
     toast("Complete cleared"); render();
   };
   $("[data-delall]", main).onclick = async () => {
-    if (!(await confirmBox({ title: `Delete all ${plural(rows.length)}?`, body: "The whole list and Complete are emptied for everyone who uses it. This can't be undone.", ok: "Delete all", danger: true }))) return;
-    const { error: e } = await sb.rpc("iml_delete", { p_all: true });
+    if (!(await confirmBox({ title: `Delete all ${plural(rows.length)}?`, body: `The whole list and Complete are emptied${L.who}. This can't be undone.`, ok: "Delete all", danger: true }))) return;
+    const { error: e } = await sb.rpc(L.del, { p_all: true });
     if (e) return toast(errMsg(e), true);
-    toast("IP Master List emptied"); render();
+    toast(`${L.title} emptied`); render();
   };
 };
 })();

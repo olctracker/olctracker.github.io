@@ -179,6 +179,7 @@ const NAV = [
   { sec: "You" },
   { id: "settings", label: "Settings", icon: "settings" },
   { id: "iml", label: "IP Master List", icon: "list", imlOnly: true },
+  { id: "aml", label: "Admin Master List", icon: "list", adminOnly: true },
   { id: "companion", label: "Companion", icon: "device", companionOnly: true },
   { id: "formulas", label: "Formulas", icon: "formulas", adminOnly: true },
   { id: "messages", label: "Messages", icon: "mail", adminOnly: true },
