@@ -198,8 +198,8 @@ async function mountSpamSlots(box) {
       <div class="slot-bar"><i style="width:${Math.min(100, (mine.length / MAX_SLOTS) * 100)}%"></i></div>
       <div class="row small muted" style="margin:6px 0 12px"><span class="grow">${fmt(perHour)}/hr total</span><span>${open > 0 ? `${open} open` : "full"}</span></div>
       <textarea class="input mono log-box" rows="5" placeholder="Paste your spam list from the game&#10;76.176.81.120&#10;LV.3&#10;27/hr&#10;1,027 earned&#10;1d"></textarea>
+      <button class="btn primary block" data-save disabled style="margin:10px 0 12px">Save spam list</button>
       <div data-prev></div>
-      <button class="btn primary block" data-save disabled style="margin-top:10px">Save spam list</button>
     </div>
 
     ${open > 0 ? `<div class="card">
@@ -372,8 +372,8 @@ PAGES.siphon = async function pageSiphon(main) {
     <div class="card">
       <div class="card-h">Paste siphon list</div>
       <textarea class="input mono log-box" rows="5" placeholder="Paste your siphon list from the game&#10;114.194.179.214&#10;LV.3&#10;1.5%&#10;65 siphoned&#10;1d ago"></textarea>
+      <button class="btn primary block" data-save disabled style="margin:10px 0 12px">Save siphon list</button>
       <div data-prev></div>
-      <button class="btn primary block" data-save disabled style="margin-top:10px">Save siphon list</button>
     </div>
 
     ${sorted.length ? `<div class="card">

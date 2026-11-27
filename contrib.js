@@ -388,8 +388,8 @@ PAGES.contrib = async function pageContrib(main) {
         <div class="card-h">Paste crew log<span class="r">mods</span></div>
         <p class="small muted" style="margin-top:0">Copy the crew activity log in the game and paste it here. Anything already saved is skipped, and a contribution that grew (2,000 → 3,000) is updated instead of counted again.</p>
         <textarea class="input log-box" rows="6" data-paste placeholder="Paste the crew activity log…">${esc(draft)}</textarea>
-        <div data-prev style="margin-top:10px"></div>
         <button class="btn primary block" data-save style="margin-top:10px" disabled>Save</button>
+        <div data-prev style="margin-top:10px"></div>
         ${lastPaste ? `<div class="row" style="margin-top:10px;gap:8px"><span class="tiny muted grow">Last paste${pasterName ? ` by <b>${esc(pasterName)}</b>` : ""} · ${fmtDateTime(lastPaste.created_at)} · ${lastPaste.added} new${lastPaste.updated ? `, ${lastPaste.updated} grown` : ""}</span>
           <button class="btn sm ghost" data-undo>Undo it</button></div>` : ""}
       </div>` : ""}

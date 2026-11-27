@@ -110,6 +110,8 @@ PAGES.process = async function pageProcess(main) {
       return;
     }
     prev.innerHTML = `
+      <div class="row" style="gap:8px;margin:10px 0 12px"><button class="btn grow" data-clear>Clear</button>
+        <button class="btn primary grow" data-save ${good.length ? "" : "disabled"}>Save ${plural(good.length, "IP", "IPs")}</button></div>
       <div class="tiles">
         <div class="tile"><div class="k">IPs found</div><div class="v gain">${good.length}</div><div class="s">go to leads</div></div>
         <div class="tile"><div class="k">Skipped</div><div class="v" style="color:var(--danger)">${skipped.length}</div><div class="s">scrambled or hidden</div></div>
@@ -120,9 +122,7 @@ PAGES.process = async function pageProcess(main) {
         ${skipped.length ? `<details style="margin-top:10px"><summary class="small" style="color:var(--danger)">${plural(skipped.length, "skipped", "skipped")}</summary>
           ${skipped.map((e) => row(e, true)).join("")}</details>` : ""}
         <div class="hint">0.0.0.0 (their own antivirus scans) is always ignored. Crew devices are left out.</div>
-      </div>
-      <div class="row" style="gap:8px"><button class="btn grow" data-clear>Clear</button>
-        <button class="btn primary grow" data-save ${good.length ? "" : "disabled"}>Save ${plural(good.length, "IP", "IPs")}</button></div>`;
+      </div>`;
     $("[data-clear]", prev).onclick = () => { ta.value = ""; draw(); };
     $("[data-save]", prev).onclick = (ev) => save(ev.currentTarget);
   }

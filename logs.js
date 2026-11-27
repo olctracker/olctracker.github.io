@@ -350,11 +350,11 @@ PAGES.logs = async function pageLogs(main) {
       <div class="card-h">Paste your log</div>
       <p class="small muted" style="margin-top:0">In the game, copy your own log and paste it here. Overlapping pastes are fine: nothing is counted twice.</p>
       <textarea class="input mono log-box" rows="8" placeholder="[10-5 14:21] Stole 1,770 Crypto from wasd...518c&#10;[10-5 14:21] Accessed device at 217.142.211.154"></textarea>
-      <div data-preview></div>
-      <div class="row" style="gap:8px;margin-top:12px">
+      <div class="row" style="gap:8px;margin:10px 0 12px">
         <button class="btn grow" data-clear>Clear</button>
         <button class="btn primary grow" data-save disabled>Save log</button>
       </div>
+      <div data-preview></div>
     </div>
     <div class="card">
       <div class="card-h">Recent activity</div>

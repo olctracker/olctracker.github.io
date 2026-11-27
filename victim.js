@@ -70,11 +70,11 @@ PAGES.victim = async function pageVictim(main) {
       <div class="card-h">Victim log</div>
       <p class="small muted" style="margin-top:0">Paste a log you viewed on another device. IPs go to <a href="#/leads">Log Leads</a>, wallet IDs are linked in Lookup and downloaded software levels are saved to those IPs. Crypto amounts are ignored.</p>
       <textarea class="input mono log-box" rows="8" placeholder="Paste the log here"></textarea>
-      <div data-prev></div>
-      <div class="row" style="gap:8px;margin-top:12px">
+      <div class="row" style="gap:8px;margin:10px 0 12px">
         <button class="btn grow" data-clear>Clear</button>
         <button class="btn primary grow" data-save disabled>Save</button>
       </div>
+      <div data-prev></div>
     </div>`;
 
   const ta = $("textarea", main), prev = $("[data-prev]", main), save = $("[data-save]", main);
